@@ -19,10 +19,20 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 - mcp/: (선택) FastMCP 서버
 - supabase/: 테이블 정의 (docs/GUIDE.md §5.2)
 
+## 작업 방식 (과목 강의자료 기준, 상세: 로컬 '1. 과정/03_강의자료 방법 적용.md')
+- 기능마다 DEFINE → PROMPT → BUILD → TEST → REFINE. 바로 구현하지 말고 /brainstorming → /write-plan → /execute-plan (Superpowers).
+- PRD 기능 항목마다 PROBLEM · DATA · DOMAIN LOGIC · VALIDATION 네 칸을 채운다.
+- 외부 서비스(Vercel, Supabase)는 MCP가 아니라 CLI + Skill로 다룬다. MCP는 HEC-RAS 연계(mcp/)에만 쓴다.
+- 반복 절차는 .claude/skills/ 에 Skill로 저장한다 (hdf-to-web, deploy, hecras-run, ai-log).
+- UI 문구·색은 "AI스럽지 않게": 과장된 맞장구·이모지 문구 금지, 사실·숫자 위주, 물·지도 중심의 차분한 색.
+- 수리학적 판단(배율 범위, 체적오차 수용 여부, 검증 해석)은 사용자가 정한다. AI는 구현·실행·정리를 맡는다.
+
 ## 규칙
 - 수리학적 정의(침수 기준 수심, KPI 공식)는 docs/GUIDE.md §4.4.1을 따른다. 임의로 바꾸지 않는다.
 - 수심은 셀 최저표고가 아니라 2 m 지형 기준으로 계산한다.
-- 원본 HEC-RAS 폴더(C:\Hec-Ras\KNUWATER\Pohang)는 수정 금지. 워커는 Pohang_web을 작업마다 폴더 구조째 복사해서 실행한다.
+- 원본 HEC-RAS 폴더(C:\Hec-Ras\KNUWATER\Pohang)는 수정 금지.
+- 웹 실행용 기준 복사본은 C:\Hec-Ras\HECRASMCP\Pohang_web (HEC-RAS는 영어 경로에서 실행 — 경로에 한글 금지). 워커는 이것을 작업마다 폴더 구조째 복사해서 실행한다.
+- 기준 복사본의 u01은 worker/prepare_base.py로 정리됨 (미사용 경계 165개 제거, 맨홀 274개 유량 DSS → 표). 결과 동일성은 worker/compare_results.py로 확인.
 - HEC-RAS 원자료와 키·비밀값은 커밋하지 않는다 (.gitignore, .env).
 - 기능 하나 끝날 때마다 실행·확인한다.
 - 로컬 작업 폴더에서 작업할 때는 ../../1. 과정/02_AI 활용 기록.md 에 한 줄 기록하고, 단계가 끝나면 ../../1. 과정/01_작업 진행 가이드.md 진행 현황판을 갱신한다.
