@@ -91,7 +91,7 @@ def main():
     ap.add_argument("--src", required=True, help="export_web 출력 폴더 (index.json 있는 곳)")
     ap.add_argument("--dst", required=True, help="웹 공개 폴더, 보통 web/public/data")
     ap.add_argument("--model-version", required=True)
-    ap.add_argument("--zmin", type=int, default=12)
+    ap.add_argument("--zmin", type=int, default=10)
     ap.add_argument("--zmax", type=int, default=16)
     a = ap.parse_args()
     for row in publish(Path(a.src), Path(a.dst), a.model_version, a.zmin, a.zmax):

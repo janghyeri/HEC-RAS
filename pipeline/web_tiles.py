@@ -56,17 +56,14 @@ def read_depth(depth_cm_png: str) -> np.ndarray:
     return cm / 100.0  # 0 = 마름 또는 자료 없음
 
 
-def render_mosaic(depth, origin_xy, pixel_xy, bbox, zmin, zmax):
-    """줌 zmax 모자이크 (zmin 타일 경계에 맞춤). 반환: 수심 배열(NaN = 마름), zmax 기준 시작 타일 (tx0, ty0)."""
-    x0z, y0z, x1z, y1z = tile_range(bbox, zmin)
-    f = 2 ** (zmax - zmin)
-    tx0, ty0 = x0z * f, y0z * f
-    nx, ny = (x1z - x0z + 1) * f, (y1z - y0z + 1) * f
-    mosaic = np.full((ny * TILE, nx * TILE), np.nan, dtype=np.float32)
+def render_mosaic(depth, origin_xy, pixel_xy, bbox, zmax):
+    """줌 zmax 모자이크 (bbox를 덮는 타일만). 반환: 수심 배열(NaN = 마름), 시작 타일 (tx0, ty0)."""
+    bx0, by0, bx1, by1 = tile_range(bbox, zmax)
+    tx0, ty0 = bx0, by0
+    mosaic = np.full(((by1 - by0 + 1) * TILE, (bx1 - bx0 + 1) * TILE), np.nan, dtype=np.float32)
     ox, oy = origin_xy
     dx, dy = pixel_xy
     rows, cols = depth.shape
-    bx0, by0, bx1, by1 = tile_range(bbox, zmax)
     j, i = np.mgrid[0:TILE, 0:TILE]
     for ty in range(by0, by1 + 1):
         for tx in range(bx0, bx1 + 1):
@@ -83,6 +80,16 @@ def render_mosaic(depth, origin_xy, pixel_xy, bbox, zmin, zmax):
             mr, mc = (ty - ty0) * TILE, (tx - tx0) * TILE
             mosaic[mr:mr + TILE, mc:mc + TILE] = tile
     return mosaic, tx0, ty0
+
+
+def pad_even(mosaic, tx0, ty0):
+    """다음 줌으로 줄이기 전에 시작 타일 번호와 타일 수가 짝수가 되도록 빈 타일을 덧댄다."""
+    ny, nx = mosaic.shape[0] // TILE, mosaic.shape[1] // TILE
+    left, top = tx0 % 2, ty0 % 2
+    right, bottom = (tx0 - left + nx + left) % 2, (ty0 - top + ny + top) % 2
+    if left or top or right or bottom:
+        mosaic = np.pad(mosaic, ((top * TILE, bottom * TILE), (left * TILE, right * TILE)), constant_values=np.nan)
+    return mosaic, tx0 - left, ty0 - top
 
 
 def downsample(mosaic):
@@ -107,9 +114,9 @@ def mosaic_area_m2(mosaic, ty0, z, min_depth=MIN_DEPTH):
     return float(np.sum(wet_per_row * res ** 2))
 
 
-def write_tiles(depth, origin_xy, pixel_xy, bbox, out_dir, zmin=12, zmax=16):
+def write_tiles(depth, origin_xy, pixel_xy, bbox, out_dir, zmin=10, zmax=16):
     out_dir = Path(out_dir)
-    mosaic, tx0, ty0 = render_mosaic(depth, origin_xy, pixel_xy, bbox, zmin, zmax)
+    mosaic, tx0, ty0 = render_mosaic(depth, origin_xy, pixel_xy, bbox, zmax)
     stats = {"area_m2_zmax": mosaic_area_m2(mosaic, ty0, zmax)}
     wet = np.argwhere(np.isfinite(mosaic))
     if len(wet):
@@ -129,6 +136,7 @@ def write_tiles(depth, origin_xy, pixel_xy, bbox, out_dir, zmin=12, zmax=16):
                 colorize(tile, min_depth=MIN_DEPTH).save(p, optimize=True)
                 n_tiles += 1
         if z > zmin:
+            level, ltx0, lty0 = pad_even(level, ltx0, lty0)
             level = downsample(level)
             ltx0, lty0 = ltx0 // 2, lty0 // 2
     stats["tiles"] = n_tiles
@@ -144,7 +152,7 @@ def main():
     ap.add_argument("--meta", required=True, help="같은 시나리오 meta.json (raster.origin_xy, pixel_xy)")
     ap.add_argument("--bbox", type=float, nargs=4, required=True, metavar=("W", "S", "E", "N"))
     ap.add_argument("--out", required=True)
-    ap.add_argument("--zmin", type=int, default=12)
+    ap.add_argument("--zmin", type=int, default=10)
     ap.add_argument("--zmax", type=int, default=16)
     a = ap.parse_args()
     r = json.loads(Path(a.meta).read_text(encoding="utf-8"))["raster"]
