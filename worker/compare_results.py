@@ -20,9 +20,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 import h5py
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pipeline.subgrid import SubgridTable  # noqa: E402  셀 표고-체적 계산은 파이프라인과 같은 구현을 쓴다
 
 BASE = "/Results/Unsteady/Output/Output Blocks/Base Output"
 SUMMARY = "/Results/Unsteady/Summary"
@@ -32,25 +37,6 @@ DEPTHS = (0.1, 0.5, 1.0)
 
 def _attrs(h, path):
     return {k: (v.decode() if isinstance(v, bytes) else v) for k, v in h[path].attrs.items()}
-
-
-def wet_area(level, info, vals, cell_area):
-    """셀 표고-체적 표에서 dV/dz = 해당 표고 아래 지형 면적. level이 셀별 기준 표고."""
-    out = np.zeros(len(level))
-    for i, (start, n) in enumerate(info):
-        z = level[i]
-        if n < 2 or not np.isfinite(z):
-            continue
-        e = vals[start:start + n, 0]
-        if z <= e[0]:
-            continue
-        if z >= e[-1]:
-            out[i] = cell_area[i]
-            continue
-        k = np.searchsorted(e, z) - 1
-        dz = e[k + 1] - e[k]
-        out[i] = (vals[start + k + 1, 1] - vals[start + k, 1]) / dz if dz > 0 else 0.0
-    return np.minimum(out, cell_area)
 
 
 def load(path: str) -> dict:
@@ -95,8 +81,9 @@ def inundation(r: dict) -> dict:
     for area, ws in r["cells"].items():
         g = r["geom"][area]
         real = np.isfinite(g["zmin"]) & (g["area"] > 0)
+        sg = SubgridTable(g["info"][real], g["vals"], g["area"][real])
         for d in DEPTHS:
-            tot[d] += wet_area(np.where(real, ws - d, np.nan), g["info"], g["vals"], g["area"])[real].sum()
+            tot[d] += sg.area_deeper_than(ws[real], d).sum()
     return tot
 
 
