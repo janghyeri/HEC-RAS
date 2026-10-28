@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>힌남노 침수 다시보기</title>
+<!-- 임시 첫 화면: 배포 주소를 먼저 확보하기 위한 정적 페이지. Step 4에서 Next.js 앱으로 바뀌면 이 파일은 지운다. -->
+<style>
+  :root { --bg: #f4f6f8; --ink: #1d2a36; --muted: #5b6b7a; --line: #d5dde5; --water: #1c5cab; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1720; --ink: #e3e9ef; --muted: #9aa8b5; --line: #2a3644; --water: #86b6ef; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+         font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; padding: 24px 16px; }
+  main { max-width: 560px; width: 100%; border-top: 3px solid var(--water); padding-top: 20px; }
+  h1 { font-size: 1.5rem; margin: 0 0 12px; letter-spacing: -0.01em; }
+  p { line-height: 1.7; margin: 0 0 10px; color: var(--muted); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 20px 0 0; padding-top: 16px;
+       border-top: 1px solid var(--line); font-size: 0.92rem; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>힌남노 침수 다시보기</h1>
+  <p>2022년 9월 6일 태풍 힌남노 때 포항 냉천 유역에서 일어난 하천 범람(외수)과 도시 내수 침수를 HEC-RAS 1D–2D 모형으로 해석한 결과를 지도와 3D로 보여줄 웹서비스입니다.</p>
+  <p>지금은 준비 중입니다.</p>
+  <dl>
+    <dt>대상</dt><dd>경상북도 포항시 냉천 유역</dd>
+    <dt>모의 시간</dt><dd>2022-09-06 02:00 ~ 13:30</dd>
+    <dt>제작</dt><dd>경북대학교 토목공학과, 「개수로 및 유사이동론」 과제</dd>
+  </dl>
+</main>
+</body>
+</html>
