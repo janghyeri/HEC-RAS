@@ -10,7 +10,8 @@
 | 파일 | 하는 일 |
 |---|---|
 | `prepare_base.py` | 기준 u01 만들기 — 지오메트리에 없는 경계조건 제거, `--dss-to-table`이면 DSS 연결 유량을 결과 HDF의 Event Conditions 값으로 u01 표 전환. 원본은 `.u01.orig`로 백업 |
-| `compare_results.py` | 두 p##.hdf 비교 — 셀 최대수위·하천 단면·측방 월류·체적오차. 수위 차이 0.01 m 이내면 "같음" |
+| `compare_results.py` | 두 p##.hdf 비교 — 침수면적(0.1·0.5·1.0 m), 셀 최대수위 차이 분위, 하천 단면, 측방 월류(방향 바뀜 표시), 체적오차. 침수면적 ±1 %·99분위 0.02 m 이내면 "같음" |
+| `run_baseline.bat` | `Pohang_web` 두 계획을 HEC-RAS 명령줄로 재실행, 로그는 `C:\Hec-Ras\HECRASMCP\run_baseline.log` |
 
 ```
 pip install h5py numpy
@@ -20,6 +21,7 @@ python compare_results.py --a C:\Hec-Ras\KNUWATER\Pohang\NC090902\NC090902.p03.h
 ```
 
 2026-10-19에 두 프로젝트 모두 적용 완료 (제거 165개, 전환 274개, 총 유입 체적 5,167,897 → 5,167,898 m³).
+2026-10-28 재실행·비교 결과 원본과 같음 (침수면적 ±0.3 % 이내). 계산 전체 6~8분 중 1D 후처리 약 4분.
 
 ## 다음 (Step 5)
 
