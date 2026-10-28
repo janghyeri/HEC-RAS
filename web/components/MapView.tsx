@@ -31,7 +31,7 @@ function mapPadding() {
   if (typeof window === "undefined") return 40;
   const mobile = window.matchMedia("(max-width: 767px)").matches;
   return mobile
-    ? { top: 64, bottom: Math.round(window.innerHeight * 0.42), left: 16, right: 16 }
+    ? { top: 64, bottom: Math.round(window.innerHeight * 0.52) + 8, left: 16, right: 16 } // 아래 시트 높이(52vh, globals.css)
     : { top: 40, bottom: 40, left: 380, right: 60 };
 }
 
