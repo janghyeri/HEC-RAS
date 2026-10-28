@@ -332,6 +332,8 @@ def export(hdf: str, terrain_path: str, out_root: str, model_version: str, scena
         "frames": {"count": T, "step_seconds": dt_s, "times": [_iso(t) for t in plan.times]},
         "quantization": {"depth_step_m": DEPTH_STEP, "wet_fraction_scale": 255, "no_peak_frame": 255},
         "raster": {"width": int(terrain.shape[1]), "height": int(terrain.shape[0]), "pixel_m": terrain.dx,
+                   "origin_xy": [terrain.x0, terrain.y0], "pixel_xy": [terrain.dx, terrain.dy],
+                   "crs": "EPSG:5187", "origin_note": "왼쪽 위 모서리, 행은 아래로 증가",
                    "corners_lonlat": raster_corners, "order": "왼위, 오위, 오아래, 왼아래",
                    "water_surface": "셀 안 수평"},
         "files": {

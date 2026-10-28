@@ -1,0 +1,18 @@
+{
+ "scenarios": [
+  {
+   "model_version": "v1",
+   "scenario_id": "S0-E",
+   "label": "힌남노 외수",
+   "path": "v1/S0-E",
+   "generated_at": "2026-10-28T12:56:23+00:00"
+  },
+  {
+   "model_version": "v1",
+   "scenario_id": "S0-C",
+   "label": "힌남노 외수+내수",
+   "path": "v1/S0-C",
+   "generated_at": "2026-10-28T12:56:29+00:00"
+  }
+ ]
+}
