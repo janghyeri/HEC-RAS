@@ -14,7 +14,7 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 - HDF 경로 표: docs/GUIDE.md §4.3.2
 
 ## 구조
-- web/: Next.js(App Router, TS) + shadcn/ui + MapLibre GL(2D, 브이월드 항공사진) + 브이월드 WebGL 3D 지도(3D, Cesium 기반), Supabase 연동. 3D 화면의 물은 수심을 지면에 덮어 그리고 숫자는 2 m DEM 기준 (docs/GUIDE.md §4.4.5). Vercel Root Directory = web
+- web/: Next.js(App Router, TS) + shadcn/ui + MapLibre GL(2D, 브이월드 항공사진) + 브이월드 WebGL 3D 지도(3D, Cesium 기반), Supabase 연동. 3D 화면의 물은 수심을 지면에 덮어 그리고 숫자는 2 m DEM 기준 (docs/GUIDE.md §4.4.5). Vercel Root Directory = web, 배포 주소 https://hinnamno-flood.vercel.app (프로젝트 hinnamno-flood)
 - worker/: Python, ras-commander로 HEC-RAS 실행, HDF 읽기 (Windows PC)
 - pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임/KPI JSON) 변환
 - mcp/: (선택) FastMCP 서버

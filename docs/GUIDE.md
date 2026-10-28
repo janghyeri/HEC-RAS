@@ -495,7 +495,7 @@ def run_job(job):
 
 | 구성 | 위치 | 비고 |
 |---|---|---|
-| 웹 (Next.js) | Vercel | 저장소 `janghyeri/HEC-RAS` 연결, Root Directory `web`, `main`에 push하면 자동 배포, 환경변수로 키 관리 |
+| 웹 (Next.js) | Vercel | **https://hinnamno-flood.vercel.app** (프로젝트 `hinnamno-flood`). 저장소 `janghyeri/HEC-RAS` 연결, Root Directory `web`, `main`에 push하면 자동 배포, 환경변수로 키 관리 |
 | DB · 파일 · 로그인 | Supabase | 시나리오당 결과 수 MB 수준(§5.1) |
 | 계산 워커 | HEC-RAS 6.6 설치 Windows PC `[확인 필요]` 어느 PC | 상시 가동, 오프라인이면 사전 계산 결과로 대체 |
 | 배경지도·3D 지도 | 브이월드 오픈API (WMTS/TMS, WebGL 3D, 검색) | 키 발급 시 서비스 URL(`localhost`, Vercel 정식 주소) 등록 |
