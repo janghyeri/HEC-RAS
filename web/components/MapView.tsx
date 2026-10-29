@@ -61,6 +61,7 @@ export default function MapView(props: Props) {
         pitchWithRotate: false,
         touchPitch: false,
         attributionControl: { compact: true },
+        hash: "map", // 주소창에 지도 위치(#map=줌/위도/경도)를 남겨 링크로 공유할 수 있게
       });
       map.touchZoomRotate.disableRotation();
       map.addControl(new ml.NavigationControl({ showCompass: false }), "top-right");
