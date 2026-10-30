@@ -26,6 +26,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+_trapz = getattr(np, "trapezoid", None) or np.trapz  # numpy 1.x(Anaconda 구버전)에서도 동작
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pipeline.subgrid import SubgridTable  # noqa: E402  셀 표고-체적 계산은 파이프라인과 같은 구현을 쓴다
 
@@ -72,7 +74,7 @@ def load(path: str) -> dict:
             dt = 600.0  # 10분 출력 (모형 기본)
             for name in h[ls].keys():
                 q = h[f"{ls}/{name}/Structure Variables"][()][:, 0].astype(float)
-                out["lat"][name] = {"peak": float(np.nanmax(q)), "net_m3": float(np.trapezoid(q, dx=dt))}
+                out["lat"][name] = {"peak": float(np.nanmax(q)), "net_m3": float(_trapz(q, dx=dt))}
     return out
 
 

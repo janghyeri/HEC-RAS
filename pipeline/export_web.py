@@ -31,6 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
+_trapz = getattr(np, "trapezoid", None) or np.trapz  # numpy 1.x(Anaconda 구버전)에서도 동작
+
 from . import tm_korea
 from .hecras_hdf import read_plan
 from .raster_depth import colorize, corners, depth_cm_image, depth_raster, rasterize_cells, read_terrain
@@ -232,8 +234,8 @@ def export(hdf: str, terrain_path: str, out_root: str, model_version: str, scena
     lateral = []
     for name, v in plan.lateral.items():
         q = v["flow"]
-        pos = float(np.trapezoid(np.clip(q, 0, None), dx=dt_s))
-        neg = float(np.trapezoid(np.clip(q, None, 0), dx=dt_s))
+        pos = float(_trapz(np.clip(q, 0, None), dx=dt_s))
+        neg = float(_trapz(np.clip(q, None, 0), dx=dt_s))
         m = re.search(r"(\d+\.\d+)$", name)
         near = xs_summary(_nearest_station(st, float(m.group(1)))) if m else None
         lateral.append({"name": name, "to_2d_area": v["area2d"],
@@ -253,7 +255,7 @@ def export(hdf: str, terrain_path: str, out_root: str, model_version: str, scena
         line = plan.bc_lines.get(key)
         if line is None or line[2] != "Internal":
             continue
-        vol = float(np.trapezoid(q, td * 86400))
+        vol = float(_trapz(q, td * 86400))
         inflow_total += vol
         inflow_series += np.interp(t_frames_days, td, q, left=0, right=0)
         inflow_feats.append({"type": "Feature",

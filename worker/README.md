@@ -23,6 +23,28 @@ python compare_results.py --a C:\Hec-Ras\KNUWATER\Pohang\NC090902\NC090902.p03.h
 2026-10-19에 두 프로젝트 모두 적용 완료 (제거 165개, 전환 274개, 총 유입 체적 5,167,897 → 5,167,898 m³).
 2026-10-28 재실행·비교 결과 원본과 같음 (침수면적 ±0.3 % 이내). 계산 전체 6~8분 중 1D 후처리 약 4분.
 
-## 다음 (Step 5)
+## Step 5 — 웹 실행 워커 (2026-10-30 작성)
 
-Supabase 대기 작업 조회 → `Pohang_web` 구조째 작업 폴더 복사 → `u01` 배율 적용 → HEC-RAS 계산 → `pipeline` 변환 → 업로드
+| 파일 | 하는 일 |
+|---|---|
+| `hecras_job.py` | 작업 1건: 입력 검사(범위는 `pipeline/models/<버전>.json` `run.params`) → `Pohang_web` 폴더 구조째 복사(지난 결과 파일 제외) → `u01` 표에 배율·보정 적용 → (선택) 1D 후처리 끄기 → `Ras.exe -c` → 결과가 다 쓰일 때까지 대기 |
+| `run_local.py` | Supabase 없이 PC에서 작업 1건 시험 — 기준 결과와 비교, 빠진 HDF 자료 목록, 웹 파일·타일 만들기, `report.json` |
+| `run_worker.py` | Supabase 대기열(`runs`)에서 작업을 가져와 계산 → 결과를 Storage `results/<버전>/run-<id>/`에 올림, 30초마다 `worker_heartbeat` |
+| `supabase_rest.py` | Supabase REST 최소 클라이언트 (표준 라이브러리만) |
+| `.env.example` | 워커 설정 예 — 실제 키는 `worker/.env`에만 (커밋 금지) |
+
+입력 항목과 u01 반영 (경계 종류는 u01 구조로 판별, 이름을 코드에 적지 않음)
+
+| 항목 | u01에서 바꾸는 표 | 기본 | 범위 (초안, 사용자 확정 전) |
+|---|---|---|---|
+| `upstream_flow_factor` 상류 유입 배율 | 하천 경계의 `Flow Hydrograph` | 1.0 | 0.5–1.5 |
+| `lateral_flow_factor` 측방 유입 배율 | `Lateral Inflow Hydrograph` 5개 | 1.0 | 0.5–1.5 |
+| `internal_flow_factor` 맨홀 월류량 배율 (외수+내수만) | 2D 경계의 `Flow Hydrograph` 274개 | 1.0 | 0–1.5 |
+| `tide_offset_m` 하류 조위 보정 | `Stage Hydrograph` (+값) | 0 | 0–1.0 m |
+| 조도계수 배율 | 지오메트리 수정 필요 — 다음 단계 | | |
+
+- 모든 값이 기본값이면 u01을 건드리지 않는다 (기준 결과와 같은 입력).
+- 시험 (2026-10-30, 실제 u01): 맨홀 ×1.5 → 274개 표 합계 정확히 1.5배(8칸 반올림 오차 ≤ 5×10⁻⁶ m³/s), 조위 +0.5 m → 205개 값 모두 +0.5, 표 밖의 줄 5,238줄 중 바뀐 줄 0.
+- `Ras.exe -c`는 후처리 전에 돌아온다 (10/28 기록: NC0909는 Ras.exe가 돌아온 뒤 약 1분 30초 동안 O03·p03.hdf를 더 씀) → 작업 폴더가 30초 동안 그대로이고 계산 메시지에 `Complete Process`가 있을 때 완료로 본다. HEC-RAS가 쓰는 중인 HDF는 열지 않는다.
+
+PC 시험: `C:\Hec-Ras\HECRASMCP\test_step5.bat` (T1 배율 1.0·후처리 끔 → 기준 결과와 비교, T2 맨홀 ×1.5·후처리 끔)
