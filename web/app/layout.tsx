@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "힌남노 침수 다시보기",
   description:
-    "2022년 태풍 힌남노 때 포항 냉천 유역의 하천 범람(외수)과 맨홀 월류(내수) 침수를 HEC-RAS 1D–2D 모형으로 해석한 결과를 지도로 보여줍니다.",
+    "2022년 태풍 힌남노 때 포항 냉천 유역의 하천 범람(외수)과 도시 침수(내수, 맨홀 월류)를 HEC-RAS 1D–2D 모형으로 해석한 결과를 지도로 보여줍니다.",
   applicationName: "힌남노 침수 다시보기",
   appleWebApp: { capable: true, title: "침수 다시보기", statusBarStyle: "default" },
   icons: {

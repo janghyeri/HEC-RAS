@@ -26,7 +26,7 @@ interface Selection {
 
 function scenarioNote(s: Scenario): string {
   const n = s.kpi.internal_inflow?.count ?? 0;
-  return n > 0 ? `하천 범람 + 맨홀 ${n.toLocaleString("ko-KR")}곳 월류` : "하천(냉천) 범람만";
+  return n > 0 ? `냉천 범람 + 맨홀 ${n.toLocaleString("ko-KR")}곳 월류` : "냉천 범람만";
 }
 
 function defaultScenario(list: Scenario[]): string {
