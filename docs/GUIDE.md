@@ -297,7 +297,7 @@ flowchart LR
 | 조도계수 배율 | 슬라이더 | 0.8 – 1.2 | 2D·1D Manning n 배율 |
 
 - **맨홀 유량**: 원본은 274개 유량이 `node.dss`(DSS 파일)에 연결돼 있어 표 수정만으로 배율을 줄 수 없었다. 기준 복사본에서는 결과 HDF의 Event Conditions 값으로 **`u01` 표(Use DSS=False, 10분 70개 값)로 전환함** (2026-10-19, 총 유입 체적 517만 m³ 일치). 재실행 결과가 원본과 같은지 확인한다.
-- 입력 범위는 서버에서 다시 검증한다(이상값으로 HEC-RAS가 멈추지 않게).
+- 입력 항목·범위는 `pipeline/models/<버전>.json`의 `run.params` 한 곳에 두고 웹 입력 화면과 워커가 같이 읽는다. 워커가 범위를 다시 검사한다(이상값으로 HEC-RAS가 멈추지 않게). 조도계수 배율은 u01이 아니라 지오메트리를 고쳐야 해서 다음 단계로 미룸 (2026-10-30)
 - 같은 조건이 이미 계산돼 있으면 새로 실행하지 않고 기존 결과를 보여준다(조건 해시로 캐시).
 
 #### 4.2.4 개발 진행 방법 (강의자료의 바이브 코딩 절차)
@@ -478,8 +478,9 @@ def run_job(job):
 | 비교 | 지표 | 자료 |
 |---|---|---|
 | 하도 최고수위 vs 흔적수위 | RMSE, 편의 | 한국수자원학회(2023) 냉천 피해원인 조사 보고서의 흔적수위 `[확인 필요]` 자료 확보 |
-| 최대 침수범위 vs 침수흔적도 | CSI = 적중 ÷ (적중 + 미탐지 + 오탐지), 적중률, 오탐률 | 포항시·행정안전부 침수흔적도 `[확인 필요]` |
+| 최대 침수범위 vs 침수흔적도 | CSI = 적중 ÷ (적중 + 미탐지 + 오탐지), 적중률, 오탐률 | 행정안전부 침수흔적도 — 재난안전데이터공유플랫폼 '행정안전부_침수흔적도', 생활안전지도(2002–2023). 없으면 포항시에 요청(자연재해대책법상 지자체 작성). 실제 침수는 외수·내수가 겹친 것이므로 **외수+내수(S0-C)**와 비교. 과거 작성 지침이 '30 cm 이상 잠긴 곳'이었으므로 모의 결과 0.1 m·0.3 m 두 기준으로 계산 — 기준 선택은 사용자 판단 (2026-10-30) |
 | 하천 수위 시계열 | NSE, 첨두 수위·시각 오차 | 냉천 수위관측 자료 `[확인 필요]` 유무 |
+| (참고) 다른 모형과 교차 비교 | 최대 침수 범위 CSI, 하도 최고수위 차이 | 사용자가 가진 다른 모형의 힌남노 결과 — 관측 검증이 아니라 모형 간 차이로만 쓴다 |
 | 질량 보존 | 전체·2D 영역별 체적오차 | HEC-RAS 체적 수지 (§4.1.5 좌안 값 점검) |
 
 > 참고 발표자료(같은 냉천 유역, 1D–2D 결합 모형)는 힌남노 흔적수위와 비교해 하도 최고수위 RMSE 0.68 m, 편의 −0.03 m를 보고했다. 비교 기준으로 삼을 수 있다. 단, 흔적수위 비교는 **하도 수위 비교**이고 제내지 침수심 검증이 아니라는 한계를 같은 자료가 짚었다 — 보고서에도 이 구분을 명시한다.
@@ -536,13 +537,17 @@ def run_job(job):
 
 ### 5.2 DB 스키마 (초안)
 
+> 2026-10-30: 처음 안의 `scenarios`·`runs`·`results`를 `runs` 하나로 합쳤다 (1건 = 조건 1개 = 결과 1개). 정의는 `supabase/migrations/20261030000000_runs.sql`, 로컬 Postgres로 권한 시험함.
+
 | 테이블 | 주요 컬럼 |
 |---|---|
-| `scenarios` | `id`, `name`, `base`(NC090901/NC090902), `params`(JSON: 상류·측방·맨홀 배율, 조위 보정, n 배율), `params_hash`, `is_precomputed`, `created_by` |
-| `runs` | `id`, `scenario_id`, `status`(queued/running/done/failed), `started_at`, `finished_at`, `runtime_s`, `log`, `ras_version`, `volume_error_pct` |
-| `results` | `run_id`, `kpi`(JSON), `max_depth_url`, `frames_url`, `timeseries_url` |
-| `validation` | `run_id`, `metric`, `value`, `reference` |
-| `worker_heartbeat` | `worker_id`, `last_seen`, `ras_version`, `cores` |
+| `runs` | `id`, `model_version`, `base`(S0-E/S0-C), `params`(JSON: 상류·측방·맨홀 배율, 조위 보정), `params_hash`(같은 조건 재사용), `status`(queued/running/done/failed/canceled), `is_precomputed`, `postprocess`, `requested_by`, `created_at`·`started_at`·`finished_at`, `worker_id`, `progress`, `log`, `error`, `wall_seconds`, `ras_seconds`(계산 단계별), `kpi`(JSON), `files_prefix` |
+| `worker_heartbeat` | `worker_id`, `last_seen`, `info`(JSON: 코어 수, 모형 버전, 지금 하는 작업) — 웹의 '계산 서버 켜짐/꺼짐' |
+| `validation` (Step 8에 추가) | `run_id`, `metric`, `value`, `reference` |
+
+- 결과 파일: Storage 공개 버킷 `results/<버전>/run-<id>/` — `kpi.json`, `meta.json`, `cells_max.u8`, `frames_depth.u8`, `manholes.geojson`, `tiles/` (1건 약 4 MB, `web/public/data/<버전>/<시나리오>/`와 같은 구성)
+- 권한: 결과 읽기는 누구나, 계산 요청은 로그인 사용자만('queued'로 자기 이름), 대기 작업은 전체 5건·1인 2건, 작업 가져가기(`claim_next_run`)와 결과 쓰기는 워커(service_role 키, 워커 PC `worker/.env`에만)만
+- 무료 요금제는 7일 동안 요청이 거의 없으면 일시 정지된다. 워커가 켜져 있으면 30초마다 상태를 써서 정지되지 않고, 정지돼도 대시보드에서 다시 켜면 자료는 그대로다
 
 ### 5.3 저장소 구조 (초안)
 
