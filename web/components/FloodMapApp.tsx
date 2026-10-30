@@ -171,13 +171,13 @@ export default function FloodMapApp() {
                   <span className="swatch" style={{ background: cls?.color }} aria-hidden="true" />
                   <div>
                     <strong className="big">{meters(res.maxDepth)}</strong>
-                    <span className="muted"> 최대 수심 · {cls?.body}</span>
+                    <span className="muted"> 최대 침수심 · {cls?.body}</span>
                   </div>
                 </div>
                 <dl className="facts">
-                  <dt>가장 깊었던 시각</dt>
+                  <dt>최대 침수 시각</dt>
                   <dd>{hhmm(res.peakTime)}</dd>
-                  <dt>0.3 m 이상 잠긴 시간</dt>
+                  <dt>0.3 m 이상 침수 지속시간</dt>
                   <dd>{duration(res.durationSec)}</dd>
                 </dl>
                 {series === null ? (
@@ -210,21 +210,21 @@ export default function FloodMapApp() {
           <section aria-label="요약">
             <dl className="stats">
               <div>
-                <dt>잠긴 면적 (0.1 m 이상)</dt>
+                <dt>침수면적 (0.1 m 이상)</dt>
                 <dd>{km2(k.inundation_area_km2["ge_0.1m"])}</dd>
               </div>
               <div>
-                <dt>침수 시작</dt>
+                <dt>침수 시작 시각</dt>
                 <dd>{hhmm(k.onset_time)}</dd>
               </div>
               <div>
-                <dt>가장 넓게 잠긴 때</dt>
+                <dt>최대 침수 시각</dt>
                 <dd>
                   {hhmm(k.peak_instant_area.time)} <span className="muted small">{km2(k.peak_instant_area.km2)}</span>
                 </dd>
               </div>
               <div>
-                <dt>깊은 곳 수심 (상위 1 %)</dt>
+                <dt>최대 침수심 (상위 1 %)</dt>
                 <dd>{meters(k.max_depth_m.p99_of_flooded, 1)}</dd>
               </div>
             </dl>
@@ -232,7 +232,7 @@ export default function FloodMapApp() {
         )}
 
         <section className="legend" aria-label="범례">
-          <h2>최대 수심</h2>
+          <h2>최대 침수심</h2>
           <ul>
             {DEPTH_CLASSES.map((c) => (
               <li key={c.range}>
@@ -248,7 +248,7 @@ export default function FloodMapApp() {
               <span className="dot" aria-hidden="true" /> 맨홀 월류 지점 보기
             </label>
           )}
-          <p className="muted small">지도를 누르면 그 자리의 최대 수심과 시간별 변화를 볼 수 있습니다.</p>
+          <p className="muted small">지도를 누르면 그 자리의 최대 침수심과 시간별 변화를 볼 수 있습니다.</p>
         </section>
 
         <footer className="panel-foot">
