@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
-// 브이월드는 국내에서 부르는 것이 안전하므로 서울 지역(icn1)에서 실행한다
+// 브이월드는 국내에서 부르는 것이 안전하므로 서울 지역(icn1)에서 실행한다 (vercel.json regions도 icn1)
 export const preferredRegion = "icn1";
 
 interface Hit {
@@ -34,7 +34,13 @@ function parseBbox(s: string | null): string | null {
 async function vworld(params: Record<string, string>): Promise<VwItem[]> {
   const url = new URL("https://api.vworld.kr/req/search");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetch(url, { cache: "no-store", headers: { Referer: params.domain ?? "" } });
+  let r: Response;
+  try {
+    r = await fetch(url, { cache: "no-store", headers: { Referer: params.domain ?? "" } });
+  } catch (e) {
+    const c = (e as { cause?: { code?: string; message?: string } }).cause;
+    throw new Error(`연결 실패 ${c?.code ?? ""} ${c?.message ?? ""}`.trim());
+  }
   const text = await r.text();
   if (!r.ok) throw new Error(`vworld HTTP ${r.status} ${text.slice(0, 120)}`);
   let j;
