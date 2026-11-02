@@ -18,6 +18,7 @@ import {
 import { DEPTH_CLASSES, depthClass } from "@/lib/depth";
 import { hasVworld, type Basemap } from "@/lib/basemap";
 import { duration, hhmm, km2, meters, shortLabel } from "@/lib/format";
+import { loadReferenceIndex, loadTraces, traceAt, traceDepthText, type RefLayer, type TraceCollection } from "@/lib/reference";
 
 interface Selection {
   lngLat: [number, number];
@@ -43,6 +44,21 @@ export default function FloodMapApp() {
   const [sel, setSel] = useState<Selection | null>(null);
   const [series, setSeries] = useState<number[] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(true);
+  const [traceLayer, setTraceLayer] = useState<RefLayer | null>(null);
+  const [traces, setTraces] = useState<TraceCollection | null>(null);
+  const [showTraces, setShowTraces] = useState(false);
+
+  // 비교용 실제 침수흔적 (있을 때만)
+  useEffect(() => {
+    loadReferenceIndex()
+      .then((layers) => {
+        const l = layers[0];
+        if (!l) return;
+        setTraceLayer(l);
+        return loadTraces(l).then(setTraces);
+      })
+      .catch(() => setTraces(null));
+  }, []);
 
   useEffect(() => {
     loadDataset()
@@ -97,6 +113,7 @@ export default function FloodMapApp() {
   const k = active?.kpi;
   const res = data && active && sel && sel.cell >= 0 ? cellResult(active, data.mesh, sel.cell) : null;
   const cls = res ? depthClass(res.maxDepth) : null;
+  const traceHere = traces && sel ? traceAt(traces, sel.lngLat[0], sel.lngLat[1]) : null;
 
   return (
     <div className="app">
@@ -107,6 +124,8 @@ export default function FloodMapApp() {
           activeId={activeId}
           basemap={basemap}
           showManholes={showManholes}
+          traces={traces}
+          showTraces={showTraces}
           selectedRing={ring}
           picked={sel?.lngLat ?? null}
           onPick={onPick}
@@ -203,6 +222,21 @@ export default function FloodMapApp() {
             ) : (
               <p className="muted">이 격자는 이 조건의 모의에서 0.1 m 이상 잠기지 않았습니다.</p>
             )}
+            {traces && traceLayer && (
+              <p className="trace-note small">
+                <span className="swatch-trace" aria-hidden="true" />
+                {traceHere ? (
+                  <>
+                    실제 침수흔적 구역입니다
+                    {traceDepthText(traceHere.FLDN_DOWA) ? ` · 기록된 침수심 ${traceDepthText(traceHere.FLDN_DOWA)}` : ""}
+                    {traceHere.FLDN_DST_NM ? ` · ${traceHere.FLDN_DST_NM}` : ""}
+                  </>
+                ) : (
+                  "실제 침수흔적 구역 밖입니다"
+                )}
+                <span className="muted"> (출처: {traceLayer.source.name})</span>
+              </p>
+            )}
           </section>
         )}
 
@@ -248,6 +282,20 @@ export default function FloodMapApp() {
               <span className="dot" aria-hidden="true" /> 맨홀 월류 지점 보기
             </label>
           )}
+          {traceLayer && traces && (
+            <>
+              <label className="check">
+                <input type="checkbox" checked={showTraces} onChange={(e) => setShowTraces(e.target.checked)} />
+                <span className="swatch-trace" aria-hidden="true" /> {traceLayer.label} 보기
+              </label>
+              {showTraces && (
+                <p className="muted small source-line">
+                  출처: {traceLayer.source.provider}, {traceLayer.source.name} ({traceLayer.source.license}).{" "}
+                  {traceLayer.source.note}
+                </p>
+              )}
+            </>
+          )}
           <p className="muted small">지도를 누르면 그 자리의 최대 침수심과 시간별 변화를 볼 수 있습니다.</p>
         </section>
 
@@ -257,6 +305,14 @@ export default function FloodMapApp() {
             {active ? `${hhmm(active.meta.frames.times[0])}–${hhmm(active.meta.frames.times.at(-1))}` : "—"}
           </p>
           <p>{hasVworld() ? "배경지도 © 국토교통부 브이월드" : "배경지도 © OpenStreetMap"}</p>
+          {traceLayer && (
+            <p>
+              침수흔적 © 행정안전부 ·{" "}
+              <a href={traceLayer.source.url} target="_blank" rel="noreferrer">
+                재난안전데이터공유플랫폼
+              </a>
+            </p>
+          )}
           {data && (
             <details>
               <summary>모형의 한계</summary>

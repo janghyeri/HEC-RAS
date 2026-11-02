@@ -288,6 +288,29 @@ button {
   box-shadow: 0 0 0 1.5px #fff;
 }
 
+/* 실제 침수흔적 (행정안전부 침수흔적도) — 지도 선과 같은 적갈색 점선 */
+.swatch-trace {
+  width: 16px;
+  height: 11px;
+  flex: none;
+  display: inline-block;
+  border: 2px dashed #8f1d14;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+.trace-note {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.source-line {
+  margin: 4px 0 0 24px;
+}
+
 /* 선택한 곳 */
 .pick {
   border: 1px solid var(--line);

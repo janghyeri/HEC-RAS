@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BASE_LAYERS, baseStyle, hasVworld, type Basemap } from "@/lib/basemap";
 import { DATA_ROOT, type BBox, type Scenario } from "@/lib/data";
+import type { TraceCollection } from "@/lib/reference";
 
 export interface Pick {
   lngLat: [number, number];
@@ -18,6 +19,9 @@ interface Props {
   activeId: string;
   basemap: Basemap;
   showManholes: boolean;
+  /** 행정안전부 침수흔적도 (원자료 그대로, 테두리만 그림) */
+  traces: TraceCollection | null;
+  showTraces: boolean;
   selectedRing: [number, number][] | null;
   picked: [number, number] | null;
   onPick: (p: Pick) => void;
@@ -36,7 +40,7 @@ function mapPadding() {
 }
 
 export default function MapView(props: Props) {
-  const { bbox, scenarios, activeId, basemap, showManholes, selectedRing, picked, onPick } = props;
+  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick } = props;
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -106,6 +110,12 @@ export default function MapView(props: Props) {
             });
           }
         }
+        // 실제 침수흔적: 흰 테두리 + 진한 적갈색 점선 (파란 수심 색·주황 맨홀 점과 구별)
+        map.addSource("traces", { type: "geojson", data: EMPTY });
+        map.addLayer({ id: "traces-halo", type: "line", source: "traces", layout: { visibility: "none" },
+          paint: { "line-color": "#ffffff", "line-width": 3.5, "line-opacity": 0.85 } });
+        map.addLayer({ id: "traces-line", type: "line", source: "traces", layout: { visibility: "none" },
+          paint: { "line-color": "#8f1d14", "line-width": 1.8, "line-dasharray": [2, 1.5] } });
         map.addSource("selected", { type: "geojson", data: EMPTY });
         map.addLayer({ id: "selected-halo", type: "line", source: "selected", paint: { "line-color": "#ffffff", "line-width": 4 } });
         map.addLayer({ id: "selected-line", type: "line", source: "selected", paint: { "line-color": "#17212b", "line-width": 1.5 } });
@@ -141,6 +151,16 @@ export default function MapView(props: Props) {
       }
     }
   }, [ready, scenarios, activeId, showManholes]);
+
+  // 실제 침수흔적
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource("traces") as GeoJSONSource).setData((traces ?? EMPTY) as never);
+    const vis = showTraces && traces ? "visible" : "none";
+    map.setLayoutProperty("traces-halo", "visibility", vis);
+    map.setLayoutProperty("traces-line", "visibility", vis);
+  }, [ready, traces, showTraces]);
 
   // 배경지도 전환
   useEffect(() => {
