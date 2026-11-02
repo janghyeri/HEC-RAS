@@ -161,6 +161,8 @@ def main():
         report["ok"] = False
         report["error"] = f"{type(e).__name__}: {e}"
         report["trace"] = traceback.format_exc().splitlines()[-8:]
+        if getattr(e, "windows", None):            # HEC-RAS가 멈췄을 때 떠 있던 창 (대화상자 글자)
+            report["ras_windows"] = e.windows
         log(f"실패: {report['error']}")
     report["wall_seconds_total"] = round(time.time() - t0, 1)
     report["finished_at"] = datetime.now().isoformat(timespec="seconds")
