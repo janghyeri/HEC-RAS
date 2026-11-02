@@ -101,7 +101,8 @@ class Worker:
                 prog = "HEC-RAS 계산 중" if "HEC-RAS 시작" in s else ("후처리 마무리 기다림" if "Ras.exe 종료" in s else None)
                 log(s, progress=prog)
 
-            res = J.run_job(ver, base, run.get("params") or {}, job_dir, postprocess=bool(run.get("postprocess")),
+            pp = run.get("postprocess")      # 값이 없으면 정석대로 1D 후처리 켬 (2026-11-02 결정)
+            res = J.run_job(ver, base, run.get("params") or {}, job_dir, postprocess=True if pp is None else bool(pp),
                             ras_exe=self.ras, log=ras_log)
             log("웹 파일 만들기", progress="결과 변환")
             from pipeline.export_web import export

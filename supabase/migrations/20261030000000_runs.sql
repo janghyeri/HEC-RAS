@@ -15,7 +15,7 @@ create table if not exists public.runs (
   status         text        not null default 'queued'
                  check (status in ('queued', 'running', 'done', 'failed', 'canceled')),
   is_precomputed boolean     not null default false,   -- 미리 계산해 둔 시나리오 (S1~S4)
-  postprocess    boolean     not null default false,   -- 1D 후처리 실행 여부
+  postprocess    boolean     not null default true,    -- 1D 후처리 실행 여부 (2026-11-02: 웹 실행도 정석대로 켬)
   requested_by   uuid        default auth.uid(),
   created_at     timestamptz not null default now(),
   started_at     timestamptz,

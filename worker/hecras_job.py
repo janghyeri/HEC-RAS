@@ -302,7 +302,8 @@ class RasStuck(RuntimeError):
 
 def run_ras(prj: Path, plan: Path, ras_exe: str | None = None, log=print,
             timeout_s: int = 3600, poll_s: float = 10.0, idle_polls: int = 3,
-            stall_s: float = 600.0, dialog_polls: int = 6, progress_s: float = 60.0) -> dict:
+            stall_s: float = 600.0, dialog_polls: int = 6, progress_s: float = 60.0,
+            fallback_idle_s: float = 300.0) -> dict:
     """HEC-RAS 명령줄 계산 후 결과가 다 쓰일 때까지 기다린다.
 
     2026-10-28 기준 실행 기록: Ras.exe -c 가 돌아온 뒤에도 1D 후처리가 1~2분 더 O03·p03.hdf를 쓴다.
@@ -315,6 +316,8 @@ def run_ras(prj: Path, plan: Path, ras_exe: str | None = None, log=print,
     - 계산 중인데 작업 폴더 파일이 stall_s 동안 하나도 바뀌지 않으면 → RasStuck
       (정상 계산에서는 p03.tmp.hdf·O03이 계속 커진다. 전체 6~8분)
     - 어느 경우든 Ras.exe와 자식 계산 프로그램을 같이 끝낸다.
+    계산 메시지에 'Complete Process'가 끝내 없을 때만, 폴더가 fallback_idle_s(5분) 동안 그대로이면 완료로 본다
+    (1D 후처리 중 잠깐 조용한 구간을 완료로 착각하지 않게 — 웹 실행은 후처리를 켬, 2026-11-02 결정).
     """
     os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")   # 읽기 쪽이 잠금을 잡지 않게
     ras = ras_path(ras_exe)
@@ -382,7 +385,7 @@ def run_ras(prj: Path, plan: Path, ras_exe: str | None = None, log=print,
                 if msg and "Complete Process" in msg:
                     break
                 sol = solution_status(hdf)
-                if idle >= idle_polls * 3 and sol:
+                if idle * poll_s >= fallback_idle_s and sol:
                     note = "계산 메시지에 'Complete Process'가 없지만 폴더가 멈추고 계산 결과가 있음"
                     log(note)
                     break
