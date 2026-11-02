@@ -17,7 +17,7 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 ## 구조
 - web/: Next.js(App Router, TS) + shadcn/ui + MapLibre GL(2D, 브이월드 항공사진) + 브이월드 WebGL 3D 지도(3D, Cesium 기반), Supabase 연동. 3D 화면의 물은 수심을 지면에 덮어 그리고 숫자는 2 m DEM 기준 (docs/GUIDE.md §4.4.5). Vercel Root Directory = web, 배포 주소 https://hinnamno-flood.vercel.app (프로젝트 hinnamno-flood)
 - worker/: Python, ras-commander로 HEC-RAS 실행, HDF 읽기 (Windows PC)
-- pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임/KPI JSON) 변환
+- pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임/KPI JSON) 변환. 하천(1D) 수면 지도는 pipeline/river_map.py·river_publish.py (단면 수위 보간, 침수면적 KPI에는 미포함)
 - mcp/: (선택) FastMCP 서버
 - supabase/: 테이블 정의 (docs/GUIDE.md §5.2)
 
@@ -40,4 +40,4 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 - 기능 하나 끝날 때마다 실행·확인한다.
 - 로컬 작업 폴더에서 작업할 때는 ../../1. 과정/02_AI 활용 기록.md 에 한 줄 기록하고, 단계가 끝나면 ../../1. 과정/01_작업 진행 가이드.md 진행 현황판을 갱신한다.
 - docs/GUIDE.md는 로컬 '1. 과정/00_프로젝트 가이드라인.md'의 사본이다. 설계가 바뀌면 둘 다 고친다.
-- 배포는 Vercel CLI, DB는 Supabase CLI 사용.
+- 배포는 Vercel(GitHub 연동, push하면 배포), DB는 Supabase GitHub 연동 — `supabase/migrations`를 main에 올리면 반영된다. 이미 적용된 마이그레이션 파일은 고치지 말고 새 파일을 추가한다 (2026-11-02).
