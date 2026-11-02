@@ -11,6 +11,20 @@ export interface ScenarioRef {
   label: string;
   path: string;
   generated_at: string;
+  /** 웹 실행의 기준 시나리오(S0-E / S0-C). 없으면 이 시나리오 자체가 기준 */
+  base?: string;
+  /** 기준에서 바꾼 입력 (pipeline/models/<버전>.json run.params 의 id → 값). 없으면 기준 그대로 */
+  params?: Record<string, number>;
+}
+
+/** 해석 조건 묶음 이름: 기준 시나리오 ID */
+export function baseOf(ref: ScenarioRef): string {
+  return ref.base ?? ref.scenario_id;
+}
+
+/** 맨홀 월류량 배율 (기준 = 1) */
+export function manholeFactor(ref: ScenarioRef): number {
+  return ref.params?.internal_flow_factor ?? 1;
 }
 
 export interface MeshInfo {

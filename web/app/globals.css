@@ -496,14 +496,32 @@ a:hover {
   border-left: 1px solid var(--navy);
 }
 
-/* 해석 조건이 3개 이상이면 한 줄에 하나씩 */
-.seg.stack {
-  grid-template-columns: minmax(0, 1fr);
+/* 맨홀 월류량 배율 (하천 범람 + 도시 침수 아래) */
+.factor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.seg.stack button + button {
-  border-left: 0;
-  border-top: 1px solid var(--navy);
+.factor > span {
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.factor .seg {
+  flex: 1;
+}
+
+.factor .seg button {
+  min-height: 36px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.factor .seg button small {
+  font-size: 11px;
 }
 
 .seg button[aria-checked="true"] {

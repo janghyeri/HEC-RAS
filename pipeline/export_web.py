@@ -140,7 +140,8 @@ def _nearest_station(stations, rs_value):
 
 
 def export(hdf: str, terrain_path: str, out_root: str, model_version: str, scenario: str,
-           label: str, geojson: bool = False) -> dict:
+           label: str, geojson: bool = False, base: str | None = None, params: dict | None = None) -> dict:
+    """base·params: 웹 실행 결과일 때 기준 시나리오와 바꾼 입력 (index.json에 그대로 적어 화면이 묶어 보여 줌)"""
     plan = read_plan(hdf)
     out_ver = Path(out_root) / model_version
     out = out_ver / scenario
@@ -355,8 +356,13 @@ def export(hdf: str, terrain_path: str, out_root: str, model_version: str, scena
     index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else {"scenarios": []}
     index["scenarios"] = [s for s in index["scenarios"]
                           if not (s["model_version"] == model_version and s["scenario_id"] == scenario)]
-    index["scenarios"].append({"model_version": model_version, "scenario_id": scenario, "label": label,
-                               "path": f"{model_version}/{scenario}", "generated_at": meta["generated_at"]})
+    entry = {"model_version": model_version, "scenario_id": scenario, "label": label,
+             "path": f"{model_version}/{scenario}", "generated_at": meta["generated_at"]}
+    if base:
+        entry["base"] = base
+    if params:
+        entry["params"] = params
+    index["scenarios"].append(entry)
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
     return kpi
 

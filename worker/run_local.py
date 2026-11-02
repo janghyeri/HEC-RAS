@@ -145,7 +145,10 @@ def main():
                 from pipeline.publish_web import publish
 
                 label = f"{b['label']} ({a.name})"
-                kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), a.model_version, a.name, label)
+                changed = {p["id"]: res.applied["params"][p["id"]] for p in cfg["params"]
+                           if p["id"] in res.applied["params"] and res.applied["params"][p["id"]] != p["default"]}
+                kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), a.model_version, a.name, label,
+                             base=a.base, params=changed or None)
                 pub = publish(job_dir / "web_out", job_dir / "web_pub", a.model_version, 10, 16)
                 report["export"] = {"ok": True, "publish": pub,
                                     "kpi": {k: kpi.get(k) for k in ("inundation_area_km2", "onset_time",

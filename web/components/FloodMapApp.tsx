@@ -12,11 +12,13 @@ import AboutDialog, { SAFETY_GUIDE_URL } from "./AboutDialog";
 import { CellIndex } from "@/lib/cells";
 import {
   OSC_MIN_COUNT,
+  baseOf,
   cellResult,
   cellSeries,
   loadDataset,
   loadFrames,
   loadTimeseries,
+  manholeFactor,
   oscillationCount,
   type BBox,
   type Dataset,
@@ -37,7 +39,8 @@ interface Selection {
 const LEGEND_LEVEL = [0.5, 1.0, 1.6, 2.2]; // 범례 그림 속 물 높이 (m) — 각 등급의 윗부분
 
 function defaultScenario(list: Scenario[]): string {
-  const withInternal = list.find((s) => (s.kpi.internal_inflow?.count ?? 0) > 0);
+  // 처음 화면: 바꾼 입력이 없는(실제 사건 재현) 조건 가운데 도시 침수(맨홀)를 넣은 것
+  const withInternal = list.find((s) => !s.ref.params && (s.kpi.internal_inflow?.count ?? 0) > 0);
   return (withInternal ?? list[0]).ref.scenario_id;
 }
 
@@ -89,10 +92,20 @@ export default function FloodMapApp() {
   const index = useMemo(() => (data ? new CellIndex(data.mesh) : null), [data]);
   const active = data?.scenarios.find((s) => s.ref.scenario_id === activeId) ?? null;
   const internalCount = Math.max(0, ...(data?.scenarios.map((s) => s.kpi.internal_inflow?.count ?? 0) ?? [0]));
-  // 가정 조건(웹 실행 결과)의 맨홀 월류량 배율 — 자료 이름 "(맨홀 월류량 ×1.5)"에서 읽는다
-  const factors = (data?.scenarios ?? [])
-    .map((s) => /맨홀 월류량\s*×([\d.]+)/.exec(s.ref.label)?.[1])
-    .filter((f): f is string => Boolean(f));
+  // 해석 조건 묶음: 기준 시나리오(하천 범람 / 하천 범람 + 도시 침수)별로, 안에서는 맨홀 월류량 배율 순서
+  const groups = useMemo(() => {
+    const m = new Map<string, Scenario[]>();
+    for (const s of data?.scenarios ?? []) {
+      const k = baseOf(s.ref);
+      m.set(k, [...(m.get(k) ?? []), s]);
+    }
+    return [...m.entries()].map(([base, list]) => ({
+      base,
+      list: [...list].sort((a, b) => manholeFactor(a.ref) - manholeFactor(b.ref)),
+      main: list.find((s) => !s.ref.params) ?? list[0],
+    }));
+  }, [data]);
+  const activeGroup = active ? groups.find((g) => g.base === baseOf(active.ref)) ?? null : null;
 
   // 시간별 침수면적
   useEffect(() => {
@@ -389,22 +402,50 @@ export default function FloodMapApp() {
             <h2 id="cond-title" className="wide-only">
               해석 조건
             </h2>
-            <div className={data.scenarios.length > 2 ? "seg stack" : "seg"} role="radiogroup" aria-label="해석 조건">
-              {data.scenarios.map((s) => (
+            <div className="seg" role="radiogroup" aria-label="해석 조건">
+              {groups.map((g) => (
                 <button
-                  key={s.ref.scenario_id}
+                  key={g.base}
                   type="button"
                   role="radio"
-                  aria-checked={s.ref.scenario_id === activeId}
-                  onClick={() => setActiveId(s.ref.scenario_id)}
+                  aria-checked={activeGroup?.base === g.base}
+                  onClick={() => setActiveId(g.main.ref.scenario_id)}
                 >
-                  {shortLabel(s.ref.label)}
+                  {shortLabel(g.main.ref.label)}
                 </button>
               ))}
             </div>
+            {activeGroup && activeGroup.list.length > 1 && (
+              <div className="factor">
+                <span id="factor-title">맨홀 월류량</span>
+                <div
+                  className="seg"
+                  role="radiogroup"
+                  aria-labelledby="factor-title"
+                  style={{ gridTemplateColumns: `repeat(${activeGroup.list.length}, minmax(0, 1fr))` }}
+                >
+                  {activeGroup.list.map((s) => {
+                    const f = manholeFactor(s.ref);
+                    return (
+                      <button
+                        key={s.ref.scenario_id}
+                        type="button"
+                        role="radio"
+                        aria-checked={s.ref.scenario_id === activeId}
+                        aria-label={`맨홀 월류량 ${f}배${s.ref.params ? " (가정)" : " (힌남노 계산값)"}`}
+                        onClick={() => setActiveId(s.ref.scenario_id)}
+                      >
+                        ×{f}
+                        {!s.ref.params && <small> 실제</small>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <p className="cond-note">
               하천 범람: 냉천 월류 · 도시 침수: 맨홀 {internalCount.toLocaleString("ko-KR")}곳 월류 유량을 함께 넣어 계산
-              {factors.map((f) => ` · ×${f}: 맨홀 월류량을 ${f}배로 가정한 계산`).join("")}
+              {activeGroup && activeGroup.list.length > 1 && " · 맨홀 월류량: 힌남노 때 계산한 맨홀 유량에 곱한 배율 (×1이 실제 사건, 나머지는 가정)"}
             </p>
           </section>
         )}

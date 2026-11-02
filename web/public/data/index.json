@@ -19,7 +19,11 @@
    "scenario_id": "S2-mh150",
    "label": "힌남노 외수+내수 (맨홀 월류량 ×1.5)",
    "path": "v1/S2-mh150",
-   "generated_at": "2026-11-02T12:31:29+00:00"
+   "generated_at": "2026-11-02T12:31:29+00:00",
+   "base": "S0-C",
+   "params": {
+    "internal_flow_factor": 1.5
+   }
   }
  ]
 }

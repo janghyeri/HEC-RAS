@@ -110,7 +110,11 @@ class Worker:
 
             sid = f"run-{rid}"
             label = run.get("label") or f"{J.load_model(ver)['run']['bases'][base]['label']} (계산 {rid})"
-            kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), ver, sid, label)
+            cfg = J.load_model(ver)["run"]
+            changed = {p["id"]: res.applied["params"][p["id"]] for p in cfg["params"]
+                       if p["id"] in res.applied["params"] and res.applied["params"][p["id"]] != p["default"]}
+            kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), ver, sid, label,
+                         base=base, params=changed or None)
             publish(job_dir / "web_out", job_dir / "web_pub", ver, 10, 16)
             out = job_dir / "web_pub" / ver / sid
             log("결과 파일 올리기", progress="결과 올리는 중")
