@@ -46,8 +46,20 @@ TM = {  # EPSG: (중앙 자오선, 위도 원점, 축척, 가산 동, 가산 북
 }
 
 
+R_MERC = 6378137.0
+
+
+def merc_to_lonlat(x, y):
+    """EPSG:3857 (웹 메르카토르) → 경위도. 침수흔적도 원자료의 GEOM이 이 좌표계다 (2026-11-02 표본으로 확인)."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    return np.degrees(x / R_MERC), np.degrees(2 * np.arctan(np.exp(y / R_MERC)) - np.pi / 2)
+
+
 def tm_to_lonlat(x, y, epsg: str):
-    """GRS80 횡메르카토르 역변환 — tm_korea(EPSG:5187)와 같은 식을 정수만 바꿔 쓴다."""
+    """GRS80 횡메르카토르 역변환 — tm_korea(EPSG:5187)와 같은 식을 정수만 바꿔 쓴다. EPSG:3857도 받는다."""
+    if epsg == "EPSG:3857":
+        return merc_to_lonlat(x, y)
     if epsg == "EPSG:5187":
         return tm_korea.to_lonlat(x, y)
     lon0, lat0, k0, fe, fn = TM[epsg]
@@ -70,6 +82,8 @@ def detect_crs(xy: np.ndarray, expect_lon=(129.2, 129.6), expect_lat=(35.8, 36.2
     x, y = float(np.median(xy[:, 0])), float(np.median(xy[:, 1]))
     if 120 < x < 135 and 30 < y < 40:
         return "EPSG:4326"
+    if 1.3e7 < x < 1.5e7 and 3.5e6 < y < 4.9e6:      # 한반도 웹 메르카토르 범위
+        return "EPSG:3857"
     for epsg in ("EPSG:5187", "EPSG:5186", "EPSG:5185", "EPSG:5179"):
         lon, lat = tm_to_lonlat(np.array([x]), np.array([y]), epsg)
         if expect_lon[0] < lon[0] < expect_lon[1] and expect_lat[0] < lat[0] < expect_lat[1]:
@@ -254,10 +268,24 @@ def load_depth(depth_cm_png: Path) -> np.ndarray:
 
 
 def load_records(paths: list[Path]) -> list[dict]:
-    """API 응답(JSON 페이지 여러 개 또는 레코드 목록 JSON)을 읽는다."""
+    """API 응답(JSON 페이지 여러 개, 레코드 목록 JSON, 내려받은 자료 JSON) 또는 플랫폼 CSV를 읽는다.
+    CSV는 둘째 줄이 한글 항목명이라 건너뛴다."""
     recs = []
     for p in paths:
-        d = json.loads(Path(p).read_text(encoding="utf-8"))
+        p = Path(p)
+        if p.suffix.lower() == ".csv":
+            import csv
+            import io
+
+            raw = p.read_bytes()
+            txt = raw.decode("utf-8-sig") if raw[:3] == b"\xef\xbb\xbf" or _is_utf8(raw) else raw.decode("cp949")
+            rows = list(csv.DictReader(io.StringIO(txt)))
+            recs += [r for r in rows if r.get("SN") != "일련번호"]
+            continue
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(d, dict) and "records" in d:      # 브라우저 스크립트로 받은 파일
+            recs += d["records"]
+            continue
         if isinstance(d, list):
             recs += d
         elif isinstance(d, dict):
@@ -269,10 +297,18 @@ def load_records(paths: list[Path]) -> list[dict]:
     return recs
 
 
+def _is_utf8(b: bytes) -> bool:
+    try:
+        b.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--records", nargs="+", required=True, help="API 응답 JSON (페이지들) 또는 레코드 목록 JSON")
-    ap.add_argument("--sgg", nargs="*", default=["4711"], help="시군구 코드 앞자리 (포항 남구 47111, 북구 47113)")
+    ap.add_argument("--sgg", nargs="*", default=["4711"], help="시군구 코드 앞자리 (포항 남구 47111, 북구 47113). 빈 값이면 전부")
     ap.add_argument("--year", default="2022")
     ap.add_argument("--event", default=None, help="재해명·원인에 들어 있어야 할 글자 (예: 힌남노)")
     ap.add_argument("--scenarios", nargs="*", default=["S0-C", "S0-E"])
