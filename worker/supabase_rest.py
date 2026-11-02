@@ -104,7 +104,7 @@ def load_env(path: Path) -> dict:
     """KEY=VALUE 형식 .env 읽기 (따옴표 없이). 없으면 빈 dict."""
     env = {}
     if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_text(encoding="utf-8-sig").splitlines():   # 메모장 BOM 허용
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
