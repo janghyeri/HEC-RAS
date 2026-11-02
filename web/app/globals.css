@@ -212,13 +212,13 @@ a:hover {
 }
 
 /* MapLibre 버튼을 네모 버튼(테두리 1 px)으로 */
-.maplibregl-ctrl-group {
+.stage .maplibregl-ctrl-group {
   border-radius: 6px !important;
   box-shadow: none !important;
   border: 1px solid var(--line-strong);
 }
 
-.maplibregl-ctrl-group button {
+.stage .maplibregl-ctrl-group button {
   width: 40px !important;
   height: 40px !important;
 }
@@ -949,17 +949,18 @@ a:hover {
     box-shadow: 0 2px 8px rgba(5, 43, 87, 0.15);
   }
 
-  .maplibregl-ctrl-top-right {
-    top: 60px;
+  /* maplibre-gl.css가 나중에 읽히므로 선택자를 한 단계 높인다 */
+  .stage .maplibregl-ctrl-top-right {
+    top: 68px;
   }
 
-  .maplibregl-ctrl-top-right .maplibregl-ctrl {
+  .stage .maplibregl-ctrl-top-right .maplibregl-ctrl {
     margin: 0 12px 6px 0;
   }
 
   /* 축척·배경지도 표기는 시트 아래 글로 대신 (가려지므로) */
-  .maplibregl-ctrl-bottom-left,
-  .maplibregl-ctrl-bottom-right {
+  .stage .maplibregl-ctrl-bottom-left,
+  .stage .maplibregl-ctrl-bottom-right {
     display: none;
   }
 
