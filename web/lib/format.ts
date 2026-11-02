@@ -25,10 +25,12 @@ export function km2(v: number): string {
 /**
  * 화면에 쓰는 해석 조건 이름. 자료(kpi.json)의 이름은 수리 용어(외수·내수) 그대로 두고 화면에서만 바꾼다.
  * "힌남노 외수+내수" → "하천 범람 + 도시 침수", "힌남노 외수" → "하천 범람" (사건 이름은 제목에 이미 있음)
+ * 가정 조건: "힌남노 외수+내수 (맨홀 월류량 ×1.5)" → "하천 범람 + 도시 침수 ×1.5" (설명은 해석 조건 아래 한 줄)
  */
 export function shortLabel(label: string): string {
   return label
     .replace(/^힌남노\s*/, "")
+    .replace(/\s*\(맨홀 월류량\s*(×[\d.]+)\)/g, " $1")
     .replace(/외수\s*\+\s*내수/g, "하천 범람 + 도시 침수")
     .replace(/외수/g, "하천 범람")
     .replace(/내수/g, "도시 침수");

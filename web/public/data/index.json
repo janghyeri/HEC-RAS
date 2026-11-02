@@ -13,6 +13,13 @@
    "label": "힌남노 외수+내수",
    "path": "v1/S0-C",
    "generated_at": "2026-10-28T12:56:29+00:00"
+  },
+  {
+   "model_version": "v1",
+   "scenario_id": "S2-mh150",
+   "label": "힌남노 외수+내수 (맨홀 월류량 ×1.5)",
+   "path": "v1/S2-mh150",
+   "generated_at": "2026-11-02T12:31:29+00:00"
   }
  ]
 }

@@ -496,6 +496,16 @@ a:hover {
   border-left: 1px solid var(--navy);
 }
 
+/* 해석 조건이 3개 이상이면 한 줄에 하나씩 */
+.seg.stack {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.seg.stack button + button {
+  border-left: 0;
+  border-top: 1px solid var(--navy);
+}
+
 .seg button[aria-checked="true"] {
   background: var(--navy);
   color: #ffffff;

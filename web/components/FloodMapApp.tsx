@@ -89,6 +89,10 @@ export default function FloodMapApp() {
   const index = useMemo(() => (data ? new CellIndex(data.mesh) : null), [data]);
   const active = data?.scenarios.find((s) => s.ref.scenario_id === activeId) ?? null;
   const internalCount = Math.max(0, ...(data?.scenarios.map((s) => s.kpi.internal_inflow?.count ?? 0) ?? [0]));
+  // 가정 조건(웹 실행 결과)의 맨홀 월류량 배율 — 자료 이름 "(맨홀 월류량 ×1.5)"에서 읽는다
+  const factors = (data?.scenarios ?? [])
+    .map((s) => /맨홀 월류량\s*×([\d.]+)/.exec(s.ref.label)?.[1])
+    .filter((f): f is string => Boolean(f));
 
   // 시간별 침수면적
   useEffect(() => {
@@ -385,7 +389,7 @@ export default function FloodMapApp() {
             <h2 id="cond-title" className="wide-only">
               해석 조건
             </h2>
-            <div className="seg" role="radiogroup" aria-label="해석 조건">
+            <div className={data.scenarios.length > 2 ? "seg stack" : "seg"} role="radiogroup" aria-label="해석 조건">
               {data.scenarios.map((s) => (
                 <button
                   key={s.ref.scenario_id}
@@ -400,6 +404,7 @@ export default function FloodMapApp() {
             </div>
             <p className="cond-note">
               하천 범람: 냉천 월류 · 도시 침수: 맨홀 {internalCount.toLocaleString("ko-KR")}곳 월류 유량을 함께 넣어 계산
+              {factors.map((f) => ` · ×${f}: 맨홀 월류량을 ${f}배로 가정한 계산`).join("")}
             </p>
           </section>
         )}
