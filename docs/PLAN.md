@@ -15,7 +15,7 @@
 | 5.1 | 작업 1건 실행 모듈 — 입력 검사, 폴더 복사, u01 배율·조위 보정, 후처리 끄기, 완료 대기 | `worker/hecras_job.py`, `pipeline/models/v1.json` `run` | 실제 u01로 맨홀 ×1.5 → 표 합계 1.5배, 표 밖 줄 변화 0 / 가짜 Ras.exe로 대기 논리 시험 | ☑ 10/30 |
 | 5.2 | PC 시험 — 배율 1.0·후처리 끔(T1), 맨홀 ×1.5(T2) | `worker/run_local.py`, `C:\Hec-Ras\HECRASMCP\test_step5.bat` | T1이 기준 결과와 '같음'(침수면적 ±1 %, 99분위 0.02 m), 빠진 HDF 자료 목록, 계산 시간 | ☑ 11/2 — R1 같음(+0.08 %, 99분위 0.019 m), HEC-RAS 3분 43초, 빠진 자료는 1D 후처리 프로파일 82개, R2 맨홀 ×1.5 정상. 첫 시험의 멈춤은 Ras.exe 인자 따옴표 누락이 원인 |
 | 5.3 | **[판단]** 후처리 끄기 채택 여부 | — | 5.2 결과: 2D·하천 KPI가 그대로이고 시간이 줄었는지 | ☑ 11/2 — 끄지 않음: 웹 실행도 정석대로 후처리 켬 (나중에 하천 단면 상세값 활용 대비, 1회 6~8분) |
-| 5.3a | 후처리 켠 실행 시험 (P1, 배율 1.0) | `C:\Hec-Ras\HECRASMCP\test_step5_post.bat` | Ras.exe가 후처리 도중 돌아온 뒤에도 'Complete Process'까지 기다리는지, 기준과 '같음'·빠진 자료 0개, 계산 시간 | ◐ PC 실행 대기 |
+| 5.3a | 후처리 켠 실행 시험 (P1, 배율 1.0) | `C:\Hec-Ras\HECRASMCP\test_step5_post.bat` | Ras.exe가 후처리 도중 돌아온 뒤에도 'Complete Process'까지 기다리는지, 기준과 '같음'·빠진 자료 0개, 계산 시간 | ☑ 11/2 — HEC-RAS 8분 22초(작업 전체 8분 39초), 빠진 자료 0개, 웹 파일 정상. 침수면적 +0.11 %·우안 99분위 0.0035 m이지만 좌안 99분위 0.029 m로 '다름' → 비교 기준은 사용자 판단 |
 | 5.4 | Supabase 테이블·권한·버킷 | `supabase/migrations/20261030000000_runs.sql` | 로컬 Postgres로 권한 시험(10/30): 익명 요청 거부, 중복 조건 거부, 1인 2건·전체 5건 제한, 워커만 claim | ◐ 계정 생성 후 `supabase db push` |
 | 5.5 | 워커 — 대기열에서 가져와 계산·변환·업로드, heartbeat | `worker/run_worker.py`, `worker/supabase_rest.py`, `worker/.env` | 가짜 Supabase 서버로 1건 처리 시험(10/30: 업로드 188개, 상태 순서, 실패 기록). 실제 프로젝트에서 `--once` 1건 | ◐ |
 | 5.6 | 웹 `/run` — 로그인(분석 모드), 조건 입력(범위는 model.json), 요청, 상태·로그 표시, 계산 서버 켜짐/꺼짐 | `web/app/run/`, `web/lib/supabase.ts` | 범위 밖 값 막힘, 같은 조건은 기존 결과로 바로 이동, 워커 꺼짐 표시 | ☐ |
