@@ -150,7 +150,15 @@ def main():
                 kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), a.model_version, a.name, label,
                              base=a.base, params=changed or None)
                 pub = publish(job_dir / "web_out", job_dir / "web_pub", a.model_version, 10, 16)
-                report["export"] = {"ok": True, "publish": pub,
+                try:                                    # 냉천 하천(1D) 수면을 지도에 더함 (실패해도 2D 결과는 남김)
+                    from pipeline.river_publish import add_river_to_job
+
+                    river = add_river_to_job(job_dir, res.hdf, res.terrain, a.model_version, a.name)
+                    log(f"하천 수면 추가: {river['area_river_km2']} km²")
+                except Exception as e:
+                    river = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+                    log(f"하천 수면 실패: {river['error']}")
+                report["export"] = {"ok": True, "publish": pub, "river": river,
                                     "kpi": {k: kpi.get(k) for k in ("inundation_area_km2", "onset_time",
                                                                     "peak_instant_area", "max_depth_m", "river",
                                                                     "volume_error_pct", "internal_inflow")}}

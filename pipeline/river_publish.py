@@ -92,7 +92,9 @@ def river_json(rv: dict, scenario: str) -> dict:
             "xs": xs}
 
 
-def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbox, zmin=10, zmax=16) -> dict:
+def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbox, zmin=10, zmax=16,
+                  index_path: Path | None = None) -> dict:
+    """index_path를 주면 그 index.json의 이 시나리오 generated_at도 맞춘다 (화면이 새 타일을 받게)"""
     t = np.load(dump / "terrain.npz")
     z = t["z"]
     x0, y0, dx, dy = (float(v) for v in t["transform"])
@@ -129,6 +131,12 @@ def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbo
                                "설명은 tiles/tiles.json")
     meta["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if index_path is not None and index_path.exists():
+        idx = json.loads(index_path.read_text(encoding="utf-8"))
+        for s in idx.get("scenarios", []):
+            if s.get("scenario_id") == scenario:
+                s["generated_at"] = meta["generated_at"]
+        index_path.write_text(json.dumps(idx, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     wet2d = np.isfinite(d2) & (d2 >= MIN_DEPTH)
     wetr = np.isfinite(river) & (river >= MIN_DEPTH)
@@ -141,6 +149,21 @@ def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbo
             "generated_at": meta["generated_at"]}
 
 
+def add_river_to_job(job_dir: Path, hdf: Path, terrain_tif: Path, model_version: str, scenario: str) -> dict:
+    """워커 작업 폴더에서: 결과 HDF·지형으로 하천 자료를 꺼내(job/river) web_pub 타일에 하천 수면을 더한다.
+    export_web → publish_web 다음에 부른다 (run_local, run_worker)."""
+    from worker.dump_river_geom import dump_hdf, dump_terrain
+
+    rdir = job_dir / "river"
+    rdir.mkdir(parents=True, exist_ok=True)
+    dump_terrain(terrain_tif, rdir)
+    dump_hdf(scenario, hdf, rdir)
+    pub = job_dir / "web_pub"
+    bbox = json.loads((pub / model_version / "mesh.json").read_text(encoding="utf-8"))["bbox_lonlat"]
+    return publish_river(pub / model_version / scenario, job_dir / "web_out" / model_version / scenario / "max_depth_cm.png",
+                         rdir, scenario, bbox, index_path=pub / "index.json")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dump", required=True)
@@ -148,9 +171,11 @@ def main():
     ap.add_argument("--dst", required=True, help="웹 공개 폴더의 시나리오 폴더")
     ap.add_argument("--scenario", required=True)
     ap.add_argument("--mesh", required=True, help="웹 공개 폴더의 mesh.json (2D 격자 범위)")
+    ap.add_argument("--index", default=None, help="웹 공개 폴더의 index.json (generated_at 맞춤)")
     a = ap.parse_args()
     bbox = json.loads(Path(a.mesh).read_text(encoding="utf-8"))["bbox_lonlat"]
-    print(json.dumps(publish_river(Path(a.dst), Path(a.depth_cm), Path(a.dump), a.scenario, bbox), ensure_ascii=False))
+    print(json.dumps(publish_river(Path(a.dst), Path(a.depth_cm), Path(a.dump), a.scenario, bbox,
+                                   index_path=Path(a.index) if a.index else None), ensure_ascii=False))
 
 
 if __name__ == "__main__":

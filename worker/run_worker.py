@@ -30,7 +30,8 @@ from worker import hecras_job as J  # noqa: E402
 from worker.supabase_rest import Supabase, SupabaseError, load_env  # noqa: E402
 
 BUCKET = "results"
-UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json")
+UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json",
+                "river.json")
 LOG_KEEP = 8000           # DB에 남기는 로그 글자 수 (끝부분)
 
 
@@ -116,6 +117,12 @@ class Worker:
             kpi = export(str(res.hdf), str(res.terrain), str(job_dir / "web_out"), ver, sid, label,
                          base=base, params=changed or None)
             publish(job_dir / "web_out", job_dir / "web_pub", ver, 10, 16)
+            try:                                        # 냉천 하천(1D) 수면을 지도에 더함
+                from pipeline.river_publish import add_river_to_job
+
+                add_river_to_job(job_dir, res.hdf, res.terrain, ver, sid)
+            except Exception as e:
+                log(f"하천 수면 실패 (2D 결과는 올림): {type(e).__name__}: {e}")
             out = job_dir / "web_pub" / ver / sid
             log("결과 파일 올리기", progress="결과 올리는 중")
             n = 0
