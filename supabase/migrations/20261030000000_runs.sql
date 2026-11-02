@@ -117,6 +117,8 @@ grant insert, update on public.runs to authenticated;
 -- 사용자가 고칠 수 있는 열을 status로 한정 (취소용). 나머지 열은 워커(service_role)만
 revoke update on public.runs from authenticated;
 grant update (status) on public.runs to authenticated;
+-- 워커(service_role) 권한도 직접 준다: 프로젝트를 "새 테이블 자동 공개" 끔으로 만들면 기본 권한이 붙지 않음 (2026-11-02)
+grant select, insert, update, delete on public.runs, public.worker_heartbeat to service_role;
 
 -- ------------------------------------------------------------------ 결과 파일 버킷 (공개 읽기)
 insert into storage.buckets (id, name, public)
