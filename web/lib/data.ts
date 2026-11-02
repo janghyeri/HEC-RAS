@@ -27,6 +27,14 @@ export function manholeFactor(ref: ScenarioRef): number {
   return ref.params?.internal_flow_factor ?? 1;
 }
 
+/**
+ * 시나리오 파일 주소. 게시 시각(generated_at)을 붙여, 같은 시나리오를 다시 게시하면 브라우저가 새 파일을 받는다
+ * (/data 는 1시간 캐시 — vercel.json). 지도 타일 주소 틀({z}/{x}/{y})에도 쓴다.
+ */
+export function scenarioUrl(ref: ScenarioRef, file: string): string {
+  return `${DATA_ROOT}/${ref.path}/${file}?v=${encodeURIComponent(ref.generated_at)}`;
+}
+
 export interface MeshInfo {
   model_version: string;
   n_cells: number;
@@ -101,8 +109,8 @@ export interface Dataset {
   scenarios: Scenario[];
 }
 
-async function getJSON<T>(url: string): Promise<T> {
-  const r = await fetch(url);
+async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(url, init);
   if (!r.ok) throw new Error(`${url} 응답 ${r.status}`);
   return (await r.json()) as T;
 }
@@ -120,7 +128,8 @@ function versionKey(v: string): number {
 }
 
 export async function loadDataset(): Promise<Dataset> {
-  const index = await getJSON<{ scenarios: ScenarioRef[] }>(`${DATA_ROOT}/index.json`);
+  // 시나리오 목록은 매번 서버에 새것인지 확인 (새 계산 결과가 바로 보이게)
+  const index = await getJSON<{ scenarios: ScenarioRef[] }>(`${DATA_ROOT}/index.json`, { cache: "no-cache" });
   if (!index.scenarios.length) throw new Error("시나리오가 없습니다");
   const version = index.scenarios
     .map((s) => s.model_version)
@@ -143,12 +152,11 @@ export async function loadDataset(): Promise<Dataset> {
 
   const scenarios = await Promise.all(
     refs.map(async (ref): Promise<Scenario> => {
-      const p = `${DATA_ROOT}/${ref.path}`;
       const [meta, kpi, tiles, cm] = await Promise.all([
-        getJSON<ScenarioMeta>(`${p}/meta.json`),
-        getJSON<Kpi>(`${p}/kpi.json`),
-        getJSON<TilesInfo>(`${p}/tiles/tiles.json`),
-        getBin(`${p}/cells_max.u8`),
+        getJSON<ScenarioMeta>(scenarioUrl(ref, "meta.json")),
+        getJSON<Kpi>(scenarioUrl(ref, "kpi.json")),
+        getJSON<TilesInfo>(scenarioUrl(ref, "tiles/tiles.json")),
+        getBin(scenarioUrl(ref, "cells_max.u8")),
       ]);
       return { ref, meta, kpi, tiles, cellsMax: new Uint8Array(cm), hasManholes: "manholes.geojson" in meta.files };
     }),
@@ -163,7 +171,7 @@ export function loadTimeseries(ref: ScenarioRef): Promise<Timeseries | null> {
   const key = ref.path;
   let p = tsCache.get(key);
   if (!p) {
-    p = getJSON<Timeseries>(`${DATA_ROOT}/${ref.path}/timeseries.json`);
+    p = getJSON<Timeseries>(scenarioUrl(ref, "timeseries.json"));
     p.catch(() => tsCache.delete(key));
     tsCache.set(key, p);
   }
@@ -177,7 +185,7 @@ export function loadFrames(ref: ScenarioRef): Promise<Uint8Array> {
   const key = ref.path;
   let p = framesCache.get(key);
   if (!p) {
-    p = getBin(`${DATA_ROOT}/${ref.path}/frames_depth.u8`).then((b) => new Uint8Array(b));
+    p = getBin(scenarioUrl(ref, "frames_depth.u8")).then((b) => new Uint8Array(b));
     p.catch(() => framesCache.delete(key));
     framesCache.set(key, p);
   }

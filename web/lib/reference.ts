@@ -33,7 +33,7 @@ export interface TraceCollection {
 
 export async function loadReferenceIndex(): Promise<RefLayer[]> {
   try {
-    const r = await fetch(`${DATA_ROOT}/reference/index.json`);
+    const r = await fetch(`${DATA_ROOT}/reference/index.json`, { cache: "no-cache" });
     if (!r.ok) return [];
     const j = (await r.json()) as { layers?: RefLayer[] };
     return j.layers ?? [];
