@@ -18,6 +18,7 @@ import {
   loadFrames,
   loadTimeseries,
   oscillationCount,
+  type BBox,
   type Dataset,
   type Scenario,
   type Timeseries,
@@ -140,6 +141,27 @@ export default function FloodMapApp() {
 
   const ring = useMemo(() => (index && sel && sel.cell >= 0 ? index.ring(sel.cell) : null), [index, sel]);
 
+  // 처음 화면: 격자 전체가 아니라 가장 넓게 잠긴 조건의 침수 범위(0.1 m 이상 셀)에 맞춘다
+  const viewBbox = useMemo((): BBox | null => {
+    if (!data) return null;
+    const { mesh } = data;
+    const s = [...data.scenarios].sort((a, b) => b.kpi.inundation_area_km2["ge_0.1m"] - a.kpi.inundation_area_km2["ge_0.1m"])[0];
+    const step = s.meta.quantization.depth_step_m;
+    const sc = mesh.info.coordinate_scale;
+    let w = Infinity, so = Infinity, e = -Infinity, n = -Infinity;
+    for (let i = 0; i < mesh.info.n_cells; i++) {
+      if (s.cellsMax[i] * step < 0.1) continue;
+      for (let k = mesh.offsets[i]; k < mesh.offsets[i + 1]; k++) {
+        const x = mesh.vertices[2 * k] / sc, y = mesh.vertices[2 * k + 1] / sc;
+        if (x < w) w = x;
+        if (x > e) e = x;
+        if (y < so) so = y;
+        if (y > n) n = y;
+      }
+    }
+    return Number.isFinite(w) ? [w, so, e, n] : mesh.info.bbox_lonlat;
+  }, [data]);
+
   if (error) {
     return (
       <main className="fallback">
@@ -201,7 +223,7 @@ export default function FloodMapApp() {
       <main id="map" className="stage" aria-label="침수 지도">
         {data && active ? (
           <MapView
-            bbox={data.mesh.info.bbox_lonlat}
+            bbox={viewBbox ?? data.mesh.info.bbox_lonlat}
             scenarios={data.scenarios}
             activeId={activeId}
             basemap={basemap}
