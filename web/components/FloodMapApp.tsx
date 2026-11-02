@@ -10,6 +10,7 @@ import PersonLevel from "./PersonLevel";
 import SearchBox, { type Place } from "./SearchBox";
 import AboutDialog, { SAFETY_GUIDE_URL } from "./AboutDialog";
 import { CellIndex } from "@/lib/cells";
+import { loadRiver, riverAt, type RiverData } from "@/lib/river";
 import {
   OSC_MIN_COUNT,
   baseOf,
@@ -65,6 +66,7 @@ export default function FloodMapApp() {
   const [traces, setTraces] = useState<TraceCollection | null>(null);
   const [showTraces, setShowTraces] = useState(false);
   const [ts, setTs] = useState<Timeseries | null>(null);
+  const [river, setRiver] = useState<RiverData | null>(null);
   const [about, setAbout] = useState(false);
   const [focus, setFocus] = useState<{ lngLat: [number, number]; zoom: number; seq: number } | null>(null);
 
@@ -106,6 +108,19 @@ export default function FloodMapApp() {
     }));
   }, [data]);
   const activeGroup = active ? groups.find((g) => g.base === baseOf(active.ref)) ?? null : null;
+
+  // 냉천 하천 단면 (하천 구간을 눌렀을 때)
+  useEffect(() => {
+    setRiver(null);
+    if (!active) return;
+    let stale = false;
+    loadRiver(active.ref).then((r) => {
+      if (!stale) setRiver(r);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [active]);
 
   // 시간별 침수면적
   useEffect(() => {
@@ -191,6 +206,11 @@ export default function FloodMapApp() {
 
   const k = active?.kpi;
   const res = data && active && sel && sel.cell >= 0 ? cellResult(active, data.mesh, sel.cell) : null;
+  // 2D 격자 밖이면 하천 구간인지 본다
+  const rp = sel && sel.cell < 0 && river ? riverAt(river, sel.lngLat[0], sel.lngLat[1]) : null;
+  const riverWs = rp && ts && ts.river_ws_m.length ? ts.river_ws_m.map((row) => row[rp.up] * (1 - rp.w) + row[rp.up + 1] * rp.w) : null;
+  const riverDepth = riverWs && rp?.bed != null ? riverWs.map((v) => Math.max(0, v - (rp.bed as number))) : null;
+  const riverPeak = riverWs ? riverWs.indexOf(Math.max(...riverWs)) : -1;
   const cls = res ? depthClass(res.maxDepth) : null;
   const traceHere = traces && sel ? traceAt(traces, sel.lngLat[0], sel.lngLat[1]) : null;
   const areaSeries = ts?.["inundation_area_ge_0.1m_km2"] ?? null;
@@ -312,8 +332,50 @@ export default function FloodMapApp() {
                 </svg>
               </button>
             </div>
-            {sel.cell < 0 ? (
-              <p className="muted">모의 범위(2D 계산 격자) 밖입니다. 냉천 주변 시가지를 눌러 보세요.</p>
+            {sel.cell < 0 && rp ? (
+              <div className="river-info">
+                <p className="river-head">
+                  <strong>냉천 하천 구간</strong>
+                  <span className="muted small"> · 단면 RS {rp.rs} 부근 (1D 계산)</span>
+                </p>
+                <dl className="facts">
+                  <dt>최고 수위</dt>
+                  <dd>
+                    {rp.maxWs !== null ? `EL. ${rp.maxWs.toFixed(2)} m` : "—"}
+                    {riverPeak >= 0 && ` (${hhmm(active.meta.frames.times[riverPeak])})`}
+                  </dd>
+                  <dt>하상 높이</dt>
+                  <dd>{rp.bed !== null ? `EL. ${rp.bed.toFixed(2)} m` : "—"}</dd>
+                  <dt>최대 수심</dt>
+                  <dd>{rp.maxWs !== null && rp.bed !== null ? meters(rp.maxWs - rp.bed) : "—"}</dd>
+                  <dt>둑 높이 (주수로 경계, 낮은 쪽)</dt>
+                  <dd>{rp.bankLow !== null ? `EL. ${rp.bankLow.toFixed(2)} m` : "—"}</dd>
+                  <dt>최고 수위와 둑</dt>
+                  <dd>
+                    {rp.maxWs === null || rp.bankLow === null
+                      ? "—"
+                      : rp.maxWs > rp.bankLow
+                        ? `둑보다 ${(rp.maxWs - rp.bankLow).toFixed(2)} m 높음 — 물이 넘침`
+                        : `둑까지 ${(rp.bankLow - rp.maxWs).toFixed(2)} m 남음`}
+                  </dd>
+                </dl>
+                {riverDepth && rp.bed !== null && rp.bankLow !== null && (
+                  <>
+                    <span className="sub-title">시간별 하천 수심 (하상 기준)</span>
+                    <Sparkline
+                      times={active.meta.frames.times}
+                      values={riverDepth}
+                      threshold={Math.round((rp.bankLow - rp.bed) * 100) / 100}
+                      thresholdLabel="둑 높이"
+                      fitThreshold
+                      name="하천 수심"
+                    />
+                  </>
+                )}
+                <p className="muted small">단면 수위를 단면 사이에 거리로 보간한 값입니다. 하천 물은 침수면적에 넣지 않습니다.</p>
+              </div>
+            ) : sel.cell < 0 ? (
+              <p className="muted">모의 범위(2D 계산 격자·하천 구간) 밖입니다. 냉천과 주변 시가지를 눌러 보세요.</p>
             ) : res && res.maxDepth >= 0.1 ? (
               <>
                 <div className="pick-main">
@@ -501,6 +563,9 @@ export default function FloodMapApp() {
               </li>
             ))}
           </ul>
+          {active?.tiles.includes_river && (
+            <p className="muted small">냉천 물길(하천 구간)도 같은 색으로 그렸습니다. 하천 물은 침수면적에 넣지 않습니다.</p>
+          )}
         </section>
 
         {(active?.hasManholes || (traceLayer && traces)) && (

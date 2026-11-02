@@ -9,17 +9,23 @@ interface Props {
   times: string[];
   values: number[];
   threshold?: number;
+  /** 기준선 이름 (기본 "0.3 m") */
+  thresholdLabel?: string;
+  /** 값이 기준선에 못 미쳐도 기준선이 보이게 세로축을 늘림 */
+  fitThreshold?: boolean;
+  /** 화면 읽기용 이름 (기본 "수심") */
+  name?: string;
 }
 
 const W = 300;
 const H = 104;
 const M = { l: 30, r: 10, t: 10, b: 20 };
 
-export default function Sparkline({ times, values, threshold = 0.3 }: Props) {
+export default function Sparkline({ times, values, threshold = 0.3, thresholdLabel, fitThreshold = false, name = "수심" }: Props) {
   const [hover, setHover] = useState<number | null>(null);
   const n = values.length;
   if (n < 2) return null;
-  const vmax = Math.max(0.5, ...values) * 1.1;
+  const vmax = Math.max(0.5, ...values, fitThreshold ? threshold : 0) * 1.1;
   const x = (i: number) => M.l + (i / (n - 1)) * (W - M.l - M.r);
   const y = (v: number) => H - M.b - (v / vmax) * (H - M.t - M.b);
   const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
@@ -46,7 +52,7 @@ export default function Sparkline({ times, values, threshold = 0.3 }: Props) {
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={`10분 간격 수심 변화, 최대 ${values[peak].toFixed(2)} m (${hhmm(times[peak])})`}
+        aria-label={`10분 간격 ${name} 변화, 최대 ${values[peak].toFixed(2)} m (${hhmm(times[peak])})`}
         onPointerMove={onMove}
         onPointerDown={onMove}
         onPointerLeave={() => setHover(null)}
@@ -63,7 +69,7 @@ export default function Sparkline({ times, values, threshold = 0.3 }: Props) {
           <g>
             <line x1={M.l} x2={W - M.r} y1={y(threshold)} y2={y(threshold)} className="spark-threshold" />
             <text x={W - M.r} y={y(threshold) - 3} textAnchor="end" className="spark-axis">
-              {threshold} m
+              {thresholdLabel ?? `${threshold} m`}
             </text>
           </g>
         )}

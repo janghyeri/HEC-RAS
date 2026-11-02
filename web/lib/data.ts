@@ -91,6 +91,8 @@ export interface TilesInfo {
   maxzoom: number;
   tile_size: number;
   bounds: BBox;
+  /** 하천(1D) 구간 수면이 타일에 들어 있는지 (pipeline/river_publish.py) */
+  includes_river?: boolean;
 }
 
 export interface Scenario {

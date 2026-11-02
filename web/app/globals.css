@@ -496,6 +496,12 @@ a:hover {
   border-left: 1px solid var(--navy);
 }
 
+/* 하천 구간을 눌렀을 때 */
+.river-head {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
 /* 맨홀 월류량 배율 (하천 범람 + 도시 침수 아래) */
 .factor {
   display: flex;

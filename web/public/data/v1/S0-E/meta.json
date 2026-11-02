@@ -3,7 +3,7 @@
  "scenario_id": "S0-E",
  "label": "힌남노 외수",
  "plan_title": "Unsteady flow_Hin Namno",
- "generated_at": "2026-10-28T12:56:23+00:00",
+ "generated_at": "2026-11-02T13:50:13+00:00",
  "n_cells": 43948,
  "geometry_hash": "7946126b2964d014",
  "frames": {
@@ -127,6 +127,7 @@
   "cells_max.u8": "uint8 (4 × 셀): [최대 수심/0.05, 최대 젖은 비율×255, 최대 시각 프레임(255=마름), 0.3 m 이상 지속 프레임 수]",
   "kpi.json": "핵심 지표",
   "timeseries.json": "시계열",
-  "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ), 설명은 tiles/tiles.json"
+  "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ) — 2D 셀 수심 + 하천(1D) 구간 수면, 설명은 tiles/tiles.json",
+  "river.json": "냉천 1D 단면 위치·하상·제방 높이·최대 수위 (지도에서 하천을 누를 때)"
  }
 }
