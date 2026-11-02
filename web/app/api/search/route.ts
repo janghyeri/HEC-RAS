@@ -4,6 +4,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
+// 브이월드는 국내에서 부르는 것이 안전하므로 서울 지역(icn1)에서 실행한다
+export const preferredRegion = "icn1";
 
 interface Hit {
   title: string;
@@ -32,9 +34,15 @@ function parseBbox(s: string | null): string | null {
 async function vworld(params: Record<string, string>): Promise<VwItem[]> {
   const url = new URL("https://api.vworld.kr/req/search");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`vworld ${r.status}`);
-  const j = await r.json();
+  const r = await fetch(url, { cache: "no-store", headers: { Referer: params.domain ?? "" } });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`vworld HTTP ${r.status} ${text.slice(0, 120)}`);
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    throw new Error(`vworld 응답이 JSON이 아님: ${text.slice(0, 120)}`);
+  }
   const res = j?.response;
   if (res?.status === "NOT_FOUND") return [];
   if (res?.status !== "OK") throw new Error(`vworld ${res?.status ?? "?"} ${res?.error?.text ?? ""}`);
@@ -72,9 +80,11 @@ export async function GET(req: NextRequest) {
   const seen = new Set<string>();
   const items: Hit[] = [];
   let failed = 0;
+  const detail: string[] = [];
   for (const s of settled) {
     if (s.status === "rejected") {
       failed++;
+      detail.push(String(s.reason instanceof Error ? s.reason.message : s.reason).replace(key, "***").slice(0, 200));
       continue;
     }
     for (const it of s.value) {
@@ -93,6 +103,7 @@ export async function GET(req: NextRequest) {
       });
     }
   }
-  if (failed === kinds.length) return NextResponse.json({ items: [], error: "검색 서비스에 연결하지 못했습니다" }, { status: 502 });
+  if (failed === kinds.length)
+    return NextResponse.json({ items: [], error: "검색 서비스에 연결하지 못했습니다", detail }, { status: 502 });
   return NextResponse.json({ items: items.slice(0, 8) }, { headers: { "Cache-Control": "public, s-maxage=3600" } });
 }

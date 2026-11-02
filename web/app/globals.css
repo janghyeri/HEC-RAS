@@ -1016,7 +1016,8 @@ a:hover {
 
 /* ---------- PC ---------- */
 @media (min-width: 768px) {
-  .narrow-only {
+  .narrow-only,
+  .basemap-ctrl {
     display: none !important;
   }
 
