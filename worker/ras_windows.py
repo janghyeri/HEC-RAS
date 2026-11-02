@@ -1,8 +1,8 @@
 """HEC-RAS 창 살펴보기 (Windows 전용) — 명령줄 계산이 대화상자 때문에 멈췄는지 알아내고 그 글자를 기록한다.
 
-2026-11-02 기록: 계획 파일 한 줄의 줄바꿈(CR)이 빠지자 Ras.exe가 결과 파일을 하나도 쓰지 않은 채
-1시간(시간 제한)까지 멈춰 있었다. 화면을 보는 사람이 없으면 대화상자가 떠도 알 수 없으므로,
-워커가 HEC-RAS 프로세스(와 그 자식)의 창 제목·글자를 직접 읽어 실행 기록에 남긴다.
+2026-11-02 기록: 워커가 Ras.exe에 파일 이름을 따옴표 없이 넘기자 HEC-RAS가 '명령줄 매개변수 오류' 창을
+띄우고 결과 파일을 하나도 쓰지 않은 채 1시간(시간 제한)까지 멈춰 있었다. 화면을 보는 사람이 없으면 이런 창이
+떠도 알 수 없으므로, 워커가 HEC-RAS 프로세스(와 그 자식)의 창 제목·글자를 직접 읽어 실행 기록에 남긴다.
 
 Windows가 아니면 빈 결과를 돌려준다 (Linux에서 시험할 때).
 """
@@ -144,9 +144,17 @@ def windows(pids: dict[int, str]) -> list[dict]:
     return out
 
 
+DIALOG_WORDS = ("error parsing command line", "unrecognized command parameter")
+
+
 def dialogs(wins: list[dict]) -> list[dict]:
-    """표준 대화상자(오류·경고·확인 창)만."""
-    return [w for w in wins if w.get("class") == DIALOG_CLASS]
+    """표준 대화상자(오류·경고·확인 창)와 HEC-RAS 명령줄 오류 창."""
+    out = []
+    for w in wins:
+        body = " ".join([w.get("title") or ""] + list(w.get("texts") or [])).lower()
+        if w.get("class") == DIALOG_CLASS or any(k in body for k in DIALOG_WORDS):
+            out.append(w)
+    return out
 
 
 def describe(wins: list[dict]) -> str:

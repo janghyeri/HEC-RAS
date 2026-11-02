@@ -11,8 +11,11 @@
 - 원본(C:\\Hec-Ras\\KNUWATER\\Pohang)과 기준 복사본(Pohang_web)은 건드리지 않는다. 작업 폴더에서만 고친다.
 - Ras.exe -c 는 후처리가 끝나기 전에 돌아올 수 있다 → 결과 HDF 계산 메시지에 "Complete Process"가
   생기고 파일 크기가 멈출 때까지 기다린다.
-- HEC-RAS 입력 파일은 줄 끝이 CRLF다. 고칠 때 줄 끝을 그대로 둔다 (2026-11-02: 계획 파일 한 줄의 CR이
-  빠지자 Ras.exe가 아무것도 쓰지 않고 1시간 멈춤). 고친 뒤 줄 수·줄 끝 개수가 같은지 확인한다.
+- Ras.exe에는 프로젝트·계획 파일 이름을 따옴표로 감싸서 넘긴다 (ras_command). 따옴표가 없으면 Ras.exe가
+  '명령줄 매개변수 오류' 창을 띄우고 멈춘다 (2026-11-02 T1·T2가 1시간씩 멈춘 원인, 화면에서 확인).
+- HEC-RAS 입력 파일은 줄 끝이 CRLF다. 고칠 때 줄 끝을 그대로 두고, 고친 뒤 줄 수·줄 끝 개수가 같은지 확인한다.
+  (처음에는 CR 하나가 빠진 것을 멈춤 원인으로 의심했으나, 같은 계획 파일을 배치 파일로 돌리면 정상 계산됨
+  → 원인은 아니었다. 원본과 같은 형식을 지키려고 고쳐 둔다.)
 - 계산 중 대화상자가 뜨거나 파일 쓰기가 오래 멈추면 바로 끝내고 창 글자를 오류에 남긴다 (ras_windows.py).
 """
 from __future__ import annotations
@@ -264,6 +267,15 @@ def ras_path(ras_exe: str | None = None) -> str:
     return ras
 
 
+def ras_command(ras: str, prj: Path, plan: Path):
+    """Ras.exe 명령줄. HEC-RAS는 프로젝트·계획 파일 이름에 따옴표가 있어야 인식한다 ("must have quotes").
+    subprocess에 목록으로 넘기면 공백 없는 경로에는 따옴표가 붙지 않아, Ras.exe가 '명령줄 매개변수 오류'
+    창을 띄우고 멈춘다 (2026-11-02 T1·T2가 1시간씩 멈춘 원인). → Windows에서는 문자열을 직접 만든다."""
+    if os.name == "nt":
+        return f'"{ras}" -c "{prj}" "{plan}"'
+    return [ras, "-c", str(prj), str(plan)]          # Linux 시험용
+
+
 def _folder_signature(folder: Path) -> tuple:
     """작업 폴더 안 파일들의 (개수, 크기 합, 가장 늦은 수정 시각) — 후처리가 아직 쓰고 있는지 보는 데 쓴다."""
     n = size = 0
@@ -314,7 +326,7 @@ def run_ras(prj: Path, plan: Path, ras_exe: str | None = None, log=print,
     folder = prj.parent
     t0 = time.time()
     log(f"HEC-RAS 시작: {prj.name} {plan.name}")
-    proc = subprocess.Popen([ras, "-c", str(prj), str(plan)], cwd=str(folder))
+    proc = subprocess.Popen(ras_command(ras, prj, plan), cwd=str(folder))
     exit_code, t_exit, last_sig, idle, msg, note = None, None, None, 0, None, ""
     last_change = last_progress = t0
     dialog_seen, seen_windows = 0, []
