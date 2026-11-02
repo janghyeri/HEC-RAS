@@ -24,6 +24,28 @@
    "params": {
     "internal_flow_factor": 1.5
    }
+  },
+  {
+   "model_version": "v1",
+   "scenario_id": "S2-mh000",
+   "label": "힌남노 외수+내수 (맨홀 월류량 ×0)",
+   "path": "v1/S2-mh000",
+   "generated_at": "2026-11-02T14:00:29+00:00",
+   "base": "S0-C",
+   "params": {
+    "internal_flow_factor": 0.0
+   }
+  },
+  {
+   "model_version": "v1",
+   "scenario_id": "S2-mh050",
+   "label": "힌남노 외수+내수 (맨홀 월류량 ×0.5)",
+   "path": "v1/S2-mh050",
+   "generated_at": "2026-11-02T14:00:50+00:00",
+   "base": "S0-C",
+   "params": {
+    "internal_flow_factor": 0.5
+   }
   }
  ]
 }

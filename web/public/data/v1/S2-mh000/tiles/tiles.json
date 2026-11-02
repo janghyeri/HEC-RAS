@@ -1,0 +1,21 @@
+{
+ "format": "png",
+ "tile_size": 256,
+ "minzoom": 10,
+ "maxzoom": 16,
+ "bounds": [
+  129.3892638,
+  35.90159719442643,
+  129.4248872,
+  36.0116939
+ ],
+ "scheme": "xyz",
+ "min_depth_m": 0.1,
+ "area_m2_zmax": 2332665.7324989564,
+ "wet_centroid_lonlat": [
+  129.40565467881441,
+  35.97582382059321
+ ],
+ "tiles": 293,
+ "includes_river": true
+}

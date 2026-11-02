@@ -1,0 +1,133 @@
+{
+ "model_version": "v1",
+ "scenario_id": "S2-mh000",
+ "label": "힌남노 외수+내수 (맨홀 월류량 ×0)",
+ "solution": "Unsteady Finished Successfully",
+ "compute_seconds": {
+  "Completing Geometry, Flow and Plan": 6,
+  "Preprocessing Geometry": 1,
+  "Unsteady Flow Computations": 115,
+  "Post-Processing": 255,
+  "Generating Time Series Post Process": 7,
+  "Complete Process": 387
+ },
+ "time_window": "06Sep2022 02:00:00 to 06Sep2022 13:30:00",
+ "inundation_area_km2": {
+  "ge_0.1m": 1.1774,
+  "ge_0.5m": 0.4383,
+  "ge_1.0m": 0.1079,
+  "ge_2.0m": 0.013
+ },
+ "inundation_area_km2_raster_check": {
+  "ge_0.1m": 1.2208,
+  "ge_0.5m": 0.4504,
+  "ge_1.0m": 0.114,
+  "ge_2.0m": 0.017
+ },
+ "depth_class_area_km2": {
+  "0.1-0.5": 0.7391,
+  "0.5-1.0": 0.3304,
+  "1.0-2.0": 0.095,
+  "gt_2.0": 0.013
+ },
+ "max_depth_m": {
+  "value": 6.07,
+  "lonlat": [
+   129.401368,
+   35.986587
+  ],
+  "p99_of_flooded": 2.23,
+  "area_ge_3m_ha": 0.21
+ },
+ "onset_time": "2022-09-06T06:10:00+09:00",
+ "peak_instant_area": {
+  "km2": 0.7264,
+  "time": "2022-09-06T08:30:00+09:00"
+ },
+ "duration_ge_0.3m": {
+  "area_km2_ge_1h": 0.6548,
+  "max_hours": 9.33
+ },
+ "flooded_buildings": null,
+ "river": {
+  "upstream": {
+   "rs": "13.434",
+   "q_max_m3s": 314.0,
+   "q_max_time": "2022-09-06T05:50:00+09:00",
+   "ws_max_m": 94.35,
+   "ws_max_time": "2022-09-06T05:50:00+09:00"
+  },
+  "outlet": {
+   "rs": "0.000",
+   "q_max_m3s": 1093.1,
+   "q_max_time": "2022-09-06T07:48:00+09:00",
+   "ws_max_m": 1.04,
+   "ws_max_time": "2022-09-06T07:20:00+09:00"
+  },
+  "q_max_anywhere": {
+   "rs": "2.613",
+   "q_max_m3s": 1200.2,
+   "q_max_time": "2022-09-06T07:36:29+09:00",
+   "ws_max_m": 8.75,
+   "ws_max_time": "2022-09-06T07:42:30+09:00"
+  }
+ },
+ "lateral_structures": [
+  {
+   "name": "NC 13.43 7.64",
+   "to_2d_area": "right",
+   "peak_m3s": 141.9,
+   "min_m3s": -100.4,
+   "volume_to_2d_m3": 587576,
+   "volume_back_to_river_m3": 112561,
+   "net_volume_m3": 475015,
+   "drains_back_to_river": true,
+   "river_at_structure": {
+    "rs": "7.600",
+    "q_max_m3s": 1092.2,
+    "q_max_time": "2022-09-06T07:09:59+09:00",
+    "ws_max_m": 40.75,
+    "ws_max_time": "2022-09-06T07:10:30+09:00"
+   }
+  },
+  {
+   "name": "NC 13.43 7.65",
+   "to_2d_area": "left",
+   "peak_m3s": 131.9,
+   "min_m3s": -2.3,
+   "volume_to_2d_m3": 931406,
+   "volume_back_to_river_m3": 9331,
+   "net_volume_m3": 922075,
+   "drains_back_to_river": true,
+   "river_at_structure": {
+    "rs": "7.700",
+    "q_max_m3s": 1023.3,
+    "q_max_time": "2022-09-06T07:09:00+09:00",
+    "ws_max_m": 40.89,
+    "ws_max_time": "2022-09-06T07:10:30+09:00"
+   }
+  }
+ ],
+ "internal_inflow": {
+  "count": 274,
+  "total_volume_m3": 0
+ },
+ "volume_error_pct": {
+  "total": 1.393,
+  "left": 68.099,
+  "right": 14.477
+ },
+ "model_notes": [
+  "좌안 2D 영역은 하천과 측방 구조물 RS 7.65 하나로만 연결되며, 이 구조물의 월류 방향이 실행마다 바뀌는 수치 불안정이 있다 (2026-10-28 재실행 확인).",
+  "좌안 2D 영역에서 계산상 약 32만 m³의 체적 불일치가 생긴다 (체적오차 외수 67 %, 외수+내수 10 %). 좌안 제내지의 수심·측방 월류량은 신뢰도가 낮다.",
+  "일부 셀(외수+내수 54개, 외수 16개 — 침수 셀 면적의 0.4 % 이하)은 10분 출력 수심이 0.3 m 넘게 오르내리기를 5번 이상 반복하는 수치 진동이 있어 최대 수심이 과대일 수 있다. 원본 결과에도 비슷한 수의 진동 셀이 있다 (2026-10-28 확인, 유입 수문곡선은 원본과 같음).",
+  "침수면적은 재실행 간 ±0.3 % 이내로 재현된다. 보완 모형(v2)으로 교체 예정 (docs/GUIDE.md §4.1.7)."
+ ],
+ "definitions": {
+  "inundation_area": "셀 표고-체적 표로 계산한 '수심 ≥ h' 면적 (최대 수위 기준). raster_check는 2 m 지형 래스터로 계산한 같은 값",
+  "onset_time": "수심 0.1 m 이상 면적이 5 ha를 처음 넘은 출력 시각",
+  "duration": "셀 면적의 절반 이상이 수심 0.3 m 이상인 출력 시각 수 × 출력 간격",
+  "max_depth": "2 m 화소 최댓값은 작은 웅덩이에 민감하므로 침수 화소(≥ 0.1 m) 수심의 99분위(p99_of_flooded)를 함께 본다",
+  "flooded_buildings": "건물 GIS 확보 전 (null)"
+ }
+}
