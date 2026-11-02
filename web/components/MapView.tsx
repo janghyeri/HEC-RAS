@@ -25,6 +25,10 @@ interface Props {
   selectedRing: [number, number][] | null;
   picked: [number, number] | null;
   onPick: (p: Pick) => void;
+  /** 검색 등으로 지도를 옮길 때 (seq가 바뀔 때마다 이동) */
+  focus: { lngLat: [number, number]; zoom: number; seq: number } | null;
+  /** 휴대폰 지도 버튼 묶음의 배경지도 바꾸기 */
+  onToggleBasemap: () => void;
 }
 
 const floodId = (s: Scenario) => `flood-${s.ref.scenario_id}`;
@@ -35,17 +39,43 @@ function mapPadding() {
   if (typeof window === "undefined") return 40;
   const mobile = window.matchMedia("(max-width: 767px)").matches;
   return mobile
-    ? { top: 64, bottom: Math.round(window.innerHeight * 0.52) + 8, left: 16, right: 16 } // 아래 시트 높이(52vh, globals.css)
-    : { top: 40, bottom: 40, left: 380, right: 60 };
+    ? { top: 72, bottom: Math.round(window.innerHeight * 0.5) + 8, left: 16, right: 60 } // 위 검색창, 아래 시트(globals.css --sheet-max)
+    : { top: 64, bottom: 150, left: 24, right: 64 }; // 위 배경지도 선택, 아래 시간별 침수면적 카드
+}
+
+// 휴대폰: 배경지도 바꾸기 버튼을 MapLibre 버튼 묶음(확대·축소·내 위치) 안에 넣는다
+class BasemapControl {
+  private el: HTMLDivElement | null = null;
+  constructor(private readonly onClick: () => void) {}
+  onAdd() {
+    const el = document.createElement("div");
+    el.className = "maplibregl-ctrl maplibregl-ctrl-group basemap-ctrl";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = "배경지도 바꾸기 (항공사진·일반지도)";
+    b.setAttribute("aria-label", "배경지도 바꾸기 (항공사진·일반지도)");
+    b.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>';
+    b.addEventListener("click", this.onClick);
+    el.appendChild(b);
+    this.el = el;
+    return el;
+  }
+  onRemove() {
+    this.el?.remove();
+  }
 }
 
 export default function MapView(props: Props) {
-  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick } = props;
+  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap } =
+    props;
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const toggleRef = useRef(onToggleBasemap);
+  toggleRef.current = onToggleBasemap;
 
   // 지도 만들기 (한 번)
   useEffect(() => {
@@ -69,8 +99,9 @@ export default function MapView(props: Props) {
       });
       map.touchZoomRotate.disableRotation();
       map.addControl(new ml.NavigationControl({ showCompass: false }), "top-right");
-      map.addControl(new ml.ScaleControl({ unit: "metric", maxWidth: 90 }), "bottom-left");
       map.addControl(new ml.GeolocateControl({ trackUserLocation: false }), "top-right");
+      if (hasVworld()) map.addControl(new BasemapControl(() => toggleRef.current()), "top-right");
+      map.addControl(new ml.ScaleControl({ unit: "metric", maxWidth: 90 }), "bottom-left");
 
       map.on("load", () => {
         if (!map) return;
@@ -184,6 +215,13 @@ export default function MapView(props: Props) {
       picked ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: picked } } : EMPTY,
     );
   }, [ready, selectedRing, picked]);
+
+  // 검색한 곳으로 이동
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !focus) return;
+    map.flyTo({ center: focus.lngLat, zoom: focus.zoom, padding: mapPadding(), duration: 900 });
+  }, [ready, focus]);
 
   return <div ref={box} className="map" aria-label="침수 지도" />;
 }

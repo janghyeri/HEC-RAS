@@ -126,6 +126,7 @@
   "frames_depth.u8": "uint8 (프레임 × 셀): 젖은 부분 평균 수심 / 0.05 m",
   "cells_max.u8": "uint8 (4 × 셀): [최대 수심/0.05, 최대 젖은 비율×255, 최대 시각 프레임(255=마름), 0.3 m 이상 지속 프레임 수]",
   "kpi.json": "핵심 지표",
+  "timeseries.json": "시계열",
   "manholes.geojson": "2D 내부 유입 경계 위치·첨두·체적",
   "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ), 설명은 tiles/tiles.json"
  }

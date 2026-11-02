@@ -43,6 +43,17 @@ export interface Kpi {
   peak_instant_area: { km2: number; time: string };
   internal_inflow: { count: number; total_volume_m3: number };
   river: { q_max_anywhere: { rs: string; q_max_m3s: number; q_max_time: string } };
+  "duration_ge_0.3m"?: { area_km2_ge_1h: number; max_hours: number };
+}
+
+/** pipeline/export_web.py timeseries.json — 10분 출력 시각별 값 */
+export interface Timeseries {
+  times: string[];
+  river_stations: string[];
+  river_flow_m3s: number[][]; // (시각 × 단면)
+  river_ws_m: number[][];
+  internal_inflow_total_m3s: number[];
+  "inundation_area_ge_0.1m_km2": number[];
 }
 
 export interface ScenarioMeta {
@@ -129,6 +140,20 @@ export async function loadDataset(): Promise<Dataset> {
     }),
   );
   return { version, model, mesh, scenarios };
+}
+
+const tsCache = new Map<string, Promise<Timeseries>>();
+
+/** 시계열(침수면적·하천 유량 등). 없으면(옛 자료) null. */
+export function loadTimeseries(ref: ScenarioRef): Promise<Timeseries | null> {
+  const key = ref.path;
+  let p = tsCache.get(key);
+  if (!p) {
+    p = getJSON<Timeseries>(`${DATA_ROOT}/${ref.path}/timeseries.json`);
+    p.catch(() => tsCache.delete(key));
+    tsCache.set(key, p);
+  }
+  return p.catch(() => null);
 }
 
 const framesCache = new Map<string, Promise<Uint8Array>>();

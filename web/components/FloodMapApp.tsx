@@ -1,9 +1,14 @@
 "use client";
 
-// F-01 2D 최대 침수심 지도 (docs/PRD.md). 지도 + 설명판(휴대폰에서는 아래 시트).
+// F-01 2D 최대 침수심 지도 (docs/PRD.md). 디자인 최종안(2026-11-02): 위쪽 남색 머리글은 A안, 내용은 최종안
+// (해석 조건 · 주요 결과 표 · 시간별 침수면적 그래프 · 사람 키 범례). 휴대폰은 아래 시트, PC는 왼쪽 정보판.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import MapView, { type Pick } from "./MapView";
 import Sparkline from "./Sparkline";
+import AreaChart from "./AreaChart";
+import PersonLevel from "./PersonLevel";
+import SearchBox, { type Place } from "./SearchBox";
+import AboutDialog, { SAFETY_GUIDE_URL } from "./AboutDialog";
 import { CellIndex } from "@/lib/cells";
 import {
   OSC_MIN_COUNT,
@@ -11,9 +16,11 @@ import {
   cellSeries,
   loadDataset,
   loadFrames,
+  loadTimeseries,
   oscillationCount,
   type Dataset,
   type Scenario,
+  type Timeseries,
 } from "@/lib/data";
 import { DEPTH_CLASSES, depthClass } from "@/lib/depth";
 import { hasVworld, type Basemap } from "@/lib/basemap";
@@ -23,16 +30,22 @@ import { loadReferenceIndex, loadTraces, traceAt, traceDepthText, type RefLayer,
 interface Selection {
   lngLat: [number, number];
   cell: number; // -1 = 모의 범위 밖
+  title?: string; // 검색으로 고른 곳 이름
 }
 
-function scenarioNote(s: Scenario): string {
-  const n = s.kpi.internal_inflow?.count ?? 0;
-  return n > 0 ? `냉천 범람 + 맨홀 ${n.toLocaleString("ko-KR")}곳 월류` : "냉천 범람만";
-}
+const LEGEND_LEVEL = [0.5, 1.0, 1.6, 2.2]; // 범례 그림 속 물 높이 (m) — 각 등급의 윗부분
 
 function defaultScenario(list: Scenario[]): string {
   const withInternal = list.find((s) => (s.kpi.internal_inflow?.count ?? 0) > 0);
   return (withInternal ?? list[0]).ref.scenario_id;
+}
+
+function ExternalIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M14 4h6v6M20 4l-9 9M19 14v6H4V5h6" />
+    </svg>
+  );
 }
 
 export default function FloodMapApp() {
@@ -47,6 +60,9 @@ export default function FloodMapApp() {
   const [traceLayer, setTraceLayer] = useState<RefLayer | null>(null);
   const [traces, setTraces] = useState<TraceCollection | null>(null);
   const [showTraces, setShowTraces] = useState(false);
+  const [ts, setTs] = useState<Timeseries | null>(null);
+  const [about, setAbout] = useState(false);
+  const [focus, setFocus] = useState<{ lngLat: [number, number]; zoom: number; seq: number } | null>(null);
 
   // 비교용 실제 침수흔적 (있을 때만)
   useEffect(() => {
@@ -71,11 +87,35 @@ export default function FloodMapApp() {
 
   const index = useMemo(() => (data ? new CellIndex(data.mesh) : null), [data]);
   const active = data?.scenarios.find((s) => s.ref.scenario_id === activeId) ?? null;
+  const internalCount = Math.max(0, ...(data?.scenarios.map((s) => s.kpi.internal_inflow?.count ?? 0) ?? [0]));
+
+  // 시간별 침수면적
+  useEffect(() => {
+    setTs(null);
+    if (!active) return;
+    let stale = false;
+    loadTimeseries(active.ref).then((t) => {
+      if (!stale) setTs(t);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [active]);
 
   const onPick = useCallback(
     (p: Pick) => {
       if (!index) return;
       setSel({ lngLat: p.lngLat, cell: index.find(p.lngLat[0], p.lngLat[1]) });
+      setSheetOpen(true);
+    },
+    [index],
+  );
+
+  const onPlace = useCallback(
+    (p: Place) => {
+      if (!index) return;
+      setSel({ lngLat: [p.lon, p.lat], cell: index.find(p.lon, p.lat), title: p.title });
+      setFocus((f) => ({ lngLat: [p.lon, p.lat], zoom: 16, seq: (f?.seq ?? 0) + 1 }));
       setSheetOpen(true);
     },
     [index],
@@ -114,72 +154,123 @@ export default function FloodMapApp() {
   const res = data && active && sel && sel.cell >= 0 ? cellResult(active, data.mesh, sel.cell) : null;
   const cls = res ? depthClass(res.maxDepth) : null;
   const traceHere = traces && sel ? traceAt(traces, sel.lngLat[0], sel.lngLat[1]) : null;
+  const areaSeries = ts?.["inundation_area_ge_0.1m_km2"] ?? null;
+  const onsetHere = series && series.length ? series.findIndex((v) => v >= 0.1) : -1;
+  const compare =
+    data && sel && sel.cell >= 0
+      ? data.scenarios.map((s) => ({ s, d: cellResult(s, data.mesh, sel.cell).maxDepth }))
+      : [];
+  const compareMax = Math.max(0.1, ...compare.map((c) => c.d));
+  const toggleBasemap = () => setBasemap((b) => (b === "photo" ? "map" : "photo"));
+
+  const legendItems = DEPTH_CLASSES.map((c, i) => ({ ...c, level: LEGEND_LEVEL[i] ?? c.lo }));
+
+  const timelineWide = areaSeries && active ? <AreaChart times={active.meta.frames.times} values={areaSeries} height={56} /> : null;
+  const timelineNarrow =
+    areaSeries && active ? <AreaChart times={active.meta.frames.times} values={areaSeries} height={44} compact /> : null;
 
   return (
     <div className="app">
-      {data && active ? (
-        <MapView
-          bbox={data.mesh.info.bbox_lonlat}
-          scenarios={data.scenarios}
-          activeId={activeId}
-          basemap={basemap}
-          showManholes={showManholes}
-          traces={traces}
-          showTraces={showTraces}
-          selectedRing={ring}
-          picked={sel?.lngLat ?? null}
-          onPick={onPick}
-        />
-      ) : (
-        <div className="map map-loading" aria-busy="true">
-          <span>지도 자료를 불러오는 중…</span>
+      {/* ---------- 머리글 (A안) ---------- */}
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-sub">
+            2022년 9월 6일 태풍 힌남노<span className="wide-only"> · 경상북도 포항시 냉천</span>
+          </span>
+          <span className="brand-title">힌남노 침수 다시보기</span>
         </div>
-      )}
+        <nav className="topnav wide-only" aria-label="주 메뉴">
+          <a href="#map" aria-current="page">
+            침수 지도
+          </a>
+          <button type="button" onClick={() => setAbout(true)}>
+            모형 설명
+          </button>
+          <a href={SAFETY_GUIDE_URL} target="_blank" rel="noreferrer">
+            국민행동요령 <ExternalIcon />
+          </a>
+        </nav>
+        <button type="button" className="menu-btn narrow-only" aria-label="모형 설명과 안내 열기" onClick={() => setAbout(true)}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+      </header>
 
-      {hasVworld() && (
-        <div className="basemap-switch" role="group" aria-label="배경지도">
-          <button aria-pressed={basemap === "photo"} onClick={() => setBasemap("photo")}>
-            항공사진
-          </button>
-          <button aria-pressed={basemap === "map"} onClick={() => setBasemap("map")}>
-            일반지도
-          </button>
+      {/* ---------- 지도 ---------- */}
+      <main id="map" className="stage" aria-label="침수 지도">
+        {data && active ? (
+          <MapView
+            bbox={data.mesh.info.bbox_lonlat}
+            scenarios={data.scenarios}
+            activeId={activeId}
+            basemap={basemap}
+            showManholes={showManholes}
+            traces={traces}
+            showTraces={showTraces}
+            selectedRing={ring}
+            picked={sel?.lngLat ?? null}
+            onPick={onPick}
+            focus={focus}
+            onToggleBasemap={toggleBasemap}
+          />
+        ) : (
+          <div className="map map-loading" aria-busy="true">
+            <span>지도 자료를 불러오는 중…</span>
+          </div>
+        )}
+
+        <SearchBox className="search-float narrow-only" bbox={data?.mesh.info.bbox_lonlat ?? null} onSelect={onPlace} />
+
+        {hasVworld() && (
+          <div className="basemap-switch wide-only" role="group" aria-label="배경지도">
+            <button type="button" aria-pressed={basemap === "photo"} onClick={() => setBasemap("photo")}>
+              항공사진
+            </button>
+            <button type="button" aria-pressed={basemap === "map"} onClick={() => setBasemap("map")}>
+              일반지도
+            </button>
+          </div>
+        )}
+
+        <div className="map-legend narrow-only" aria-label="최대 침수심 범례">
+          <span className="map-legend-title">최대 침수심 (m)</span>
+          {DEPTH_CLASSES.map((c) => (
+            <span key={c.range} className="map-legend-row">
+              <span className="chip" style={{ background: c.color }} aria-hidden="true" />
+              <span className="map-legend-range">{c.range.replace(" m", "")}</span>
+              <span className="muted">{c.body}</span>
+            </span>
+          ))}
         </div>
-      )}
 
+        {timelineWide && (
+          <section className="timeline-card wide-only" aria-label="시간별 침수면적">
+            {timelineWide}
+          </section>
+        )}
+      </main>
+
+      {/* ---------- 정보판 (휴대폰: 아래 시트) ---------- */}
       <aside className={`panel ${sheetOpen ? "open" : "closed"}`} aria-label="침수 정보">
-        <button className="sheet-handle" onClick={() => setSheetOpen((v) => !v)} aria-expanded={sheetOpen}>
+        <button type="button" className="sheet-handle" onClick={() => setSheetOpen((v) => !v)} aria-expanded={sheetOpen}>
           <span className="sheet-grip" aria-hidden="true" />
           <span className="sr-only">{sheetOpen ? "정보 접기" : "정보 펼치기"}</span>
         </button>
 
-        <header className="panel-head">
-          <h1>힌남노 침수 다시보기</h1>
-          <p className="muted">2022년 9월 6일 · 포항 냉천 유역 · HEC-RAS 모의 결과</p>
-        </header>
-
-        {data && (
-          <div className="seg" role="radiogroup" aria-label="해석 조건">
-            {data.scenarios.map((s) => (
-              <button
-                key={s.ref.scenario_id}
-                role="radio"
-                aria-checked={s.ref.scenario_id === activeId}
-                onClick={() => setActiveId(s.ref.scenario_id)}
-              >
-                <strong>{shortLabel(s.ref.label)}</strong>
-                <span>{scenarioNote(s)}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <SearchBox className="wide-only" bbox={data?.mesh.info.bbox_lonlat ?? null} onSelect={onPlace} />
 
         {sel && active && data && (
-          <section className="pick" aria-live="polite">
+          <section className="pick" aria-live="polite" aria-label="선택한 곳의 침수 정보">
             <div className="pick-head">
-              <h2>선택한 곳</h2>
-              <button className="link" onClick={() => setSel(null)}>
-                닫기
+              <div>
+                <h2>{sel.title ?? "선택한 곳"}</h2>
+                <span className="tag">{shortLabel(active.ref.label)}</span>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setSel(null)} aria-label="선택한 곳 닫기">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
               </button>
             </div>
             {sel.cell < 0 ? (
@@ -187,26 +278,53 @@ export default function FloodMapApp() {
             ) : res && res.maxDepth >= 0.1 ? (
               <>
                 <div className="pick-main">
-                  <span className="swatch" style={{ background: cls?.color }} aria-hidden="true" />
+                  <PersonLevel
+                    depth={res.maxDepth}
+                    color={cls?.color ?? "#1c5cab"}
+                    width={40}
+                    height={100}
+                    label={`성인 키 1.8 m 기준 수위 표시, ${cls?.body ?? ""}`}
+                  />
                   <div>
+                    <span className="muted">최대 침수심</span>
                     <strong className="big">{meters(res.maxDepth)}</strong>
-                    <span className="muted"> 최대 침수심 · {cls?.body}</span>
+                    <span className="muted small class-line">
+                      <span className="chip" style={{ background: cls?.color }} aria-hidden="true" />
+                      {cls?.range} 등급 · {cls?.body}
+                    </span>
                   </div>
                 </div>
                 <dl className="facts">
+                  <dt>침수 시작 시각</dt>
+                  <dd>{series === null ? "…" : onsetHere >= 0 ? hhmm(active.meta.frames.times[onsetHere]) : "—"}</dd>
                   <dt>최대 침수 시각</dt>
                   <dd>{hhmm(res.peakTime)}</dd>
                   <dt>0.3 m 이상 침수 지속시간</dt>
                   <dd>{duration(res.durationSec)}</dd>
                 </dl>
+                {compare.length > 1 && (
+                  <div className="compare">
+                    <span className="sub-title">해석 조건별 최대 침수심</span>
+                    {compare.map(({ s, d }) => (
+                      <div key={s.ref.scenario_id} className="compare-row">
+                        <span>{shortLabel(s.ref.label)}</span>
+                        <span className="bar" aria-hidden="true">
+                          <span style={{ width: `${(d / compareMax) * 100}%`, background: depthClass(d)?.color ?? "#C9D2DB" }} />
+                        </span>
+                        <strong>{d >= 0.1 ? meters(d) : "0.1 m 미만"}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {series === null ? (
                   <p className="muted small">시간별 수심을 불러오는 중…</p>
                 ) : series.length > 0 ? (
                   <>
+                    <span className="sub-title">시간별 침수심</span>
                     <Sparkline times={active.meta.frames.times} values={series} />
                     {oscillationCount(series) >= OSC_MIN_COUNT && (
                       <p className="warn small">
-                        <strong>주의</strong> 이 격자는 계산 중 수심이 10분 간격으로 크게 오르내리는 수치 진동이 있습니다. 최대 수심이
+                        <strong>주의</strong> 이 격자는 계산 중 수심이 10분 간격으로 크게 오르내리는 수치 진동이 있습니다. 최대 침수심이
                         실제보다 크게 나왔을 수 있습니다.
                       </p>
                     )}
@@ -215,14 +333,14 @@ export default function FloodMapApp() {
                   <p className="muted small">시간별 수심을 불러오지 못했습니다.</p>
                 )}
                 <p className="muted small">
-                  값은 이 계산 격자(면적 {Math.round(res.area)} m²) 안 젖은 부분의 평균 수심입니다. 지도 색(2 m 지형 기준)과 조금
-                  다를 수 있습니다.
+                  계산 격자(면적 {Math.round(res.area)} m²) 안 젖은 부분의 평균 수심입니다. 지도 색(2 m 지형 기준)과 조금 다를 수
+                  있습니다.
                 </p>
               </>
             ) : (
               <p className="muted">이 격자는 이 조건의 모의에서 0.1 m 이상 잠기지 않았습니다.</p>
             )}
-            {traces && traceLayer && (
+            {traces && traceLayer && sel.cell >= 0 && (
               <p className="trace-note small">
                 <span className="swatch-trace" aria-hidden="true" />
                 {traceHere ? (
@@ -240,9 +358,36 @@ export default function FloodMapApp() {
           </section>
         )}
 
+        {data && (
+          <section className="cond" aria-labelledby="cond-title">
+            <h2 id="cond-title" className="wide-only">
+              해석 조건
+            </h2>
+            <div className="seg" role="radiogroup" aria-label="해석 조건">
+              {data.scenarios.map((s) => (
+                <button
+                  key={s.ref.scenario_id}
+                  type="button"
+                  role="radio"
+                  aria-checked={s.ref.scenario_id === activeId}
+                  onClick={() => setActiveId(s.ref.scenario_id)}
+                >
+                  {shortLabel(s.ref.label)}
+                </button>
+              ))}
+            </div>
+            <p className="cond-note">
+              하천 범람: 냉천 월류 · 도시 침수: 맨홀 {internalCount.toLocaleString("ko-KR")}곳 월류 유량을 함께 넣어 계산
+            </p>
+          </section>
+        )}
+
         {k && (
-          <section aria-label="요약">
-            <dl className="stats">
+          <section aria-labelledby="kpi-title">
+            <h2 id="kpi-title" className="wide-only">
+              주요 결과
+            </h2>
+            <dl className="kpi">
               <div>
                 <dt>침수면적 (0.1 m 이상)</dt>
                 <dd>{km2(k.inundation_area_km2["ge_0.1m"])}</dd>
@@ -254,77 +399,91 @@ export default function FloodMapApp() {
               <div>
                 <dt>최대 침수 시각</dt>
                 <dd>
-                  {hhmm(k.peak_instant_area.time)} <span className="muted small">{km2(k.peak_instant_area.km2)}</span>
+                  {hhmm(k.peak_instant_area.time)} <span className="kpi-sub">{km2(k.peak_instant_area.km2)}</span>
                 </dd>
               </div>
               <div>
                 <dt>최대 침수심 (상위 1 %)</dt>
                 <dd>{meters(k.max_depth_m.p99_of_flooded, 1)}</dd>
               </div>
+              {k["duration_ge_0.3m"] && (
+                <div className="wide-only-flex">
+                  <dt>0.3 m 이상 1시간 넘게 침수</dt>
+                  <dd>{km2(k["duration_ge_0.3m"].area_km2_ge_1h)}</dd>
+                </div>
+              )}
             </dl>
           </section>
         )}
 
-        <section className="legend" aria-label="범례">
-          <h2>최대 침수심</h2>
+        {timelineNarrow && (
+          <section className="narrow-only timeline-sheet" aria-label="시간별 침수면적">
+            {timelineNarrow}
+          </section>
+        )}
+
+        <section className="legend wide-only" aria-labelledby="legend-title">
+          <h2 id="legend-title">최대 침수심 범례</h2>
           <ul>
-            {DEPTH_CLASSES.map((c) => (
+            {legendItems.map((c) => (
               <li key={c.range}>
-                <span className="swatch" style={{ background: c.color }} aria-hidden="true" />
-                <span className="legend-range">{c.range}</span>
+                <PersonLevel depth={c.level} color={c.color} />
+                <strong>{c.range}</strong>
                 <span className="muted">{c.body}</span>
               </li>
             ))}
           </ul>
-          {active?.hasManholes && (
-            <label className="check">
-              <input type="checkbox" checked={showManholes} onChange={(e) => setShowManholes(e.target.checked)} />
-              <span className="dot" aria-hidden="true" /> 맨홀 월류 지점 보기
-            </label>
-          )}
-          {traceLayer && traces && (
-            <>
-              <label className="check">
-                <input type="checkbox" checked={showTraces} onChange={(e) => setShowTraces(e.target.checked)} />
-                <span className="swatch-trace" aria-hidden="true" /> {traceLayer.label} 보기
-              </label>
-              {showTraces && (
-                <p className="muted small source-line">
-                  출처: {traceLayer.source.provider}, {traceLayer.source.name} ({traceLayer.source.license}).{" "}
-                  {traceLayer.source.note}
-                </p>
-              )}
-            </>
-          )}
-          <p className="muted small">지도를 누르면 그 자리의 최대 침수심과 시간별 변화를 볼 수 있습니다.</p>
         </section>
 
+        {(active?.hasManholes || (traceLayer && traces)) && (
+          <section className="layers" aria-label="지도에 함께 보기">
+            {active?.hasManholes && (
+              <label className="check">
+                <input type="checkbox" checked={showManholes} onChange={(e) => setShowManholes(e.target.checked)} />
+                <span className="dot" aria-hidden="true" /> 맨홀 월류 지점 보기
+              </label>
+            )}
+            {traceLayer && traces && (
+              <>
+                <label className="check">
+                  <input type="checkbox" checked={showTraces} onChange={(e) => setShowTraces(e.target.checked)} />
+                  <span className="swatch-trace" aria-hidden="true" /> {traceLayer.label} 보기
+                </label>
+                {showTraces && (
+                  <p className="muted small source-line">
+                    출처: {traceLayer.source.provider}, {traceLayer.source.name} ({traceLayer.source.license}). {traceLayer.source.note}
+                  </p>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        <div className="actions">
+          <a className="btn-outline" href={SAFETY_GUIDE_URL} target="_blank" rel="noreferrer">
+            국민행동요령 <ExternalIcon />
+          </a>
+          <button type="button" className="btn-outline" onClick={() => setAbout(true)}>
+            모형 설명
+          </button>
+          {!sel && <span className="muted small hint">지도를 누르면 그 자리의 침수심을 볼 수 있습니다</span>}
+        </div>
+
         <footer className="panel-foot">
-          <p>
-            모의 결과이며 실제 침수 흔적과 다를 수 있습니다. 모형 {data?.version ?? "—"} · 모의 시간{" "}
-            {active ? `${hhmm(active.meta.frames.times[0])}–${hhmm(active.meta.frames.times.at(-1))}` : "—"}
-          </p>
-          <p>{hasVworld() ? "배경지도 © 국토교통부 브이월드" : "배경지도 © OpenStreetMap"}</p>
-          {traceLayer && (
-            <p>
-              침수흔적 © 행정안전부 ·{" "}
-              <a href={traceLayer.source.url} target="_blank" rel="noreferrer">
-                재난안전데이터공유플랫폼
-              </a>
-            </p>
-          )}
-          {data && (
-            <details>
-              <summary>모형의 한계</summary>
-              <ul>
-                {data.model.notes.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            </details>
-          )}
+          HEC-RAS 1D–2D 모의 결과(모형 {data?.version ?? "—"})로 실제 침수와 다를 수 있습니다 ·{" "}
+          {hasVworld() ? "배경지도 © 국토교통부 브이월드" : "배경지도 © OpenStreetMap"}
+          {traceLayer && <> · 침수흔적 © 행정안전부</>}
         </footer>
       </aside>
+
+      <AboutDialog
+        open={about}
+        onClose={() => setAbout(false)}
+        model={data?.model ?? null}
+        version={data?.version ?? null}
+        traceLayer={traceLayer}
+        manholes={internalCount}
+      />
     </div>
   );
 }

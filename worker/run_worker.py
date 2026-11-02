@@ -30,7 +30,7 @@ from worker import hecras_job as J  # noqa: E402
 from worker.supabase_rest import Supabase, SupabaseError, load_env  # noqa: E402
 
 BUCKET = "results"
-UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson")
+UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json")
 LOG_KEEP = 8000           # DB에 남기는 로그 글자 수 (끝부분)
 
 

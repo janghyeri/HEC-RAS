@@ -28,7 +28,7 @@ from . import tm_korea
 from .web_tiles import MIN_DEPTH, read_depth, write_tiles
 
 MESH_FILES = ("mesh.json", "mesh_vertices.i32", "mesh_offsets.u32", "mesh_cells.f32", "model.json")
-SCENARIO_FILES = ("kpi.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson")
+SCENARIO_FILES = ("kpi.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json")
 AREA_TOL = 0.01
 
 
