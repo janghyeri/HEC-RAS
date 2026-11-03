@@ -6,7 +6,7 @@
 - 한 번에 1건만 계산한다. 계산 중에도 30초마다 worker_heartbeat를 갱신한다 → 웹에 '계산 서버 켜짐' 표시.
 - 설정: worker/.env (worker/.env.example 참고). service_role 키는 이 파일에만 둔다.
 - 실행 (Anaconda Prompt, 저장소 루트):  python -m worker.run_worker
-  한 건만 처리하고 끝내려면 --once
+  한 건만 처리하고 끝내려면 --once. 워커 PC에서는 start_worker.bat(worker/start_worker.bat 사본)을 더블클릭한다.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from worker import hecras_job as J  # noqa: E402
-from worker.supabase_rest import Supabase, SupabaseError, load_env  # noqa: E402
+from worker.supabase_rest import Supabase, SupabaseError, _ctype, load_env  # noqa: E402
 
 BUCKET = "results"
 UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json",
@@ -129,8 +129,7 @@ class Worker:
             for f in UPLOAD_FILES:
                 p = out / f
                 if p.exists():
-                    self.sb.upload(BUCKET, f"{prefix}/{f}", p.read_bytes(),
-                                   "application/json" if f.endswith(".json") else None)
+                    self.sb.upload(BUCKET, f"{prefix}/{f}", p.read_bytes(), _ctype(p))
                     n += 1
             n += self.sb.upload_dir(BUCKET, f"{prefix}/tiles", out / "tiles", log=log)
             tasks = _tasks(res.run.get("compute_messages"))
@@ -158,6 +157,13 @@ class Worker:
     def loop(self, once: bool = False, idle_s: float = 10.0):
         print(f"워커 {self.worker_id} 시작 — 모형 {', '.join(self.versions)}, 작업 폴더 {self.jobs}", flush=True)
         self.jobs.mkdir(parents=True, exist_ok=True)
+        # 창을 닫는 등으로 끝나지 못한 이 워커의 'running' 작업 정리 — 남아 있으면 같은 조건을 다시 요청할 수 없다
+        try:
+            self.sb.update("runs", {"worker_id": self.worker_id, "status": "running"},
+                           {"status": "failed", "finished_at": now_iso(), "progress": "실패",
+                            "error": "워커가 다시 시작됨 — 이전 계산이 끝나지 않았습니다. 다시 요청해 주세요."})
+        except SupabaseError as e:
+            print(f"[정리] {e}", flush=True)
         self.heartbeat()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         try:
