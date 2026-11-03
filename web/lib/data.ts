@@ -1,5 +1,8 @@
 // 웹 공개 자료(web/public/data, pipeline/publish_web.py 출력)를 읽는다.
+// 웹 실행 결과(Supabase Storage results/<버전>/run-<id>/)도 같은 파일 구성이라 같은 함수로 읽는다 (ScenarioRef.url_base).
 // 모형 값(시나리오 목록, 셀 수, 시각, 범위)은 모두 파일에서 읽고 코드에 넣지 않는다 (CLAUDE.md 모형 버전 규칙).
+import type { RunConfig } from "./runConfig";
+import type { RunRow } from "./supabase";
 
 export const DATA_ROOT = "/data";
 
@@ -15,6 +18,10 @@ export interface ScenarioRef {
   base?: string;
   /** 기준에서 바꾼 입력 (pipeline/models/<버전>.json run.params 의 id → 값). 없으면 기준 그대로 */
   params?: Record<string, number>;
+  /** 파일 주소 앞부분. 없으면 /data (웹 실행 결과는 Supabase Storage 공개 주소) */
+  url_base?: string;
+  /** 웹에서 요청한 계산의 번호 (runs.id) */
+  run_id?: number;
 }
 
 /** 해석 조건 묶음 이름: 기준 시나리오 ID */
@@ -32,7 +39,12 @@ export function manholeFactor(ref: ScenarioRef): number {
  * (/data 는 1시간 캐시 — vercel.json). 지도 타일 주소 틀({z}/{x}/{y})에도 쓴다.
  */
 export function scenarioUrl(ref: ScenarioRef, file: string): string {
-  return `${DATA_ROOT}/${ref.path}/${file}?v=${encodeURIComponent(ref.generated_at)}`;
+  return `${ref.url_base ?? DATA_ROOT}/${ref.path}/${file}?v=${encodeURIComponent(ref.generated_at)}`;
+}
+
+/** 지도 라이브러리에 넘길 절대 주소 (/data/... 는 이 사이트 주소를 붙인다) */
+export function absoluteUrl(url: string): string {
+  return /^https?:\/\//.test(url) ? url : `${location.origin}${url}`;
 }
 
 export interface MeshInfo {
@@ -54,6 +66,8 @@ export interface ModelInfo {
   model_version: string;
   description: string;
   notes: string[];
+  /** 웹 실행 입력 조건 (pipeline/models/<버전>.json run) */
+  run?: RunConfig;
 }
 
 export interface Kpi {
@@ -129,20 +143,38 @@ function versionKey(v: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-export async function loadDataset(): Promise<Dataset> {
-  // 시나리오 목록은 매번 서버에 새것인지 확인 (새 계산 결과가 바로 보이게)
+/** 시나리오 목록 (가장 새 모형 버전만). 매번 서버에 새것인지 확인한다 — 새 계산 결과가 바로 보이게 */
+export async function loadIndex(): Promise<{ version: string; refs: ScenarioRef[] }> {
   const index = await getJSON<{ scenarios: ScenarioRef[] }>(`${DATA_ROOT}/index.json`, { cache: "no-cache" });
   if (!index.scenarios.length) throw new Error("시나리오가 없습니다");
   const version = index.scenarios
     .map((s) => s.model_version)
     .sort((a, b) => versionKey(a) - versionKey(b))
     .at(-1) as string;
-  const refs = index.scenarios.filter((s) => s.model_version === version);
+  return { version, refs: index.scenarios.filter((s) => s.model_version === version) };
+}
+
+export function loadModelInfo(version: string): Promise<ModelInfo> {
+  return getJSON<ModelInfo>(`${DATA_ROOT}/${version}/model.json`, { cache: "no-cache" });
+}
+
+export async function loadScenario(ref: ScenarioRef): Promise<Scenario> {
+  const [meta, kpi, tiles, cm] = await Promise.all([
+    getJSON<ScenarioMeta>(scenarioUrl(ref, "meta.json")),
+    getJSON<Kpi>(scenarioUrl(ref, "kpi.json")),
+    getJSON<TilesInfo>(scenarioUrl(ref, "tiles/tiles.json")),
+    getBin(scenarioUrl(ref, "cells_max.u8")),
+  ]);
+  return { ref, meta, kpi, tiles, cellsMax: new Uint8Array(cm), hasManholes: "manholes.geojson" in meta.files };
+}
+
+export async function loadDataset(): Promise<Dataset> {
+  const { version, refs } = await loadIndex();
   const base = `${DATA_ROOT}/${version}`;
 
   const [info, model, vbuf, obuf, cbuf] = await Promise.all([
     getJSON<MeshInfo>(`${base}/mesh.json`),
-    getJSON<ModelInfo>(`${base}/model.json`),
+    loadModelInfo(version),
     getBin(`${base}/mesh_vertices.i32`),
     getBin(`${base}/mesh_offsets.u32`),
     getBin(`${base}/mesh_cells.f32`),
@@ -152,18 +184,28 @@ export async function loadDataset(): Promise<Dataset> {
   for (let i = 0; i < info.n_cells; i++) cellArea[i] = cells[2 * i];
   const mesh: Mesh = { info, vertices: new Int32Array(vbuf), offsets: new Uint32Array(obuf), cellArea };
 
-  const scenarios = await Promise.all(
-    refs.map(async (ref): Promise<Scenario> => {
-      const [meta, kpi, tiles, cm] = await Promise.all([
-        getJSON<ScenarioMeta>(scenarioUrl(ref, "meta.json")),
-        getJSON<Kpi>(scenarioUrl(ref, "kpi.json")),
-        getJSON<TilesInfo>(scenarioUrl(ref, "tiles/tiles.json")),
-        getBin(scenarioUrl(ref, "cells_max.u8")),
-      ]);
-      return { ref, meta, kpi, tiles, cellsMax: new Uint8Array(cm), hasManholes: "manholes.geojson" in meta.files };
-    }),
-  );
+  const scenarios = await Promise.all(refs.map(loadScenario));
   return { version, model, mesh, scenarios };
+}
+
+/**
+ * 웹 실행 결과(runs 행) → 시나리오 참조. 결과 파일은 워커가 Storage에 올린 곳(files_prefix)에서 읽는다.
+ * 이름은 워커가 kpi.json에 쓰는 것과 같은 꼴: "<기준 이름> (계산 <번호>)"
+ */
+export function runRef(row: RunRow, urlBase: string, cfg: RunConfig | undefined): ScenarioRef {
+  const changed: Record<string, number> = {};
+  for (const p of cfg?.params ?? []) if (p.id in row.params && row.params[p.id] !== p.default) changed[p.id] = row.params[p.id];
+  return {
+    model_version: row.model_version,
+    scenario_id: `run-${row.id}`,
+    label: row.label ?? `${cfg?.bases[row.base]?.label ?? row.base} (계산 ${row.id})`,
+    path: row.files_prefix ?? `${row.model_version}/run-${row.id}`,
+    generated_at: row.finished_at ?? row.created_at,
+    base: row.base,
+    params: Object.keys(changed).length ? changed : undefined,
+    url_base: urlBase,
+    run_id: row.id,
+  };
 }
 
 const tsCache = new Map<string, Promise<Timeseries>>();

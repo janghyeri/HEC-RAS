@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BASE_LAYERS, baseStyle, hasVworld, type Basemap } from "@/lib/basemap";
-import { scenarioUrl, type BBox, type Scenario } from "@/lib/data";
+import { absoluteUrl, scenarioUrl, type BBox, type Scenario } from "@/lib/data";
 import type { TraceCollection } from "@/lib/reference";
 
 export interface Pick {
@@ -109,7 +109,7 @@ export default function MapView(props: Props) {
         for (const s of scenarios) {
           map.addSource(floodId(s), {
             type: "raster",
-            tiles: [`${location.origin}${scenarioUrl(s.ref, "tiles/{z}/{x}/{y}.png")}`],
+            tiles: [absoluteUrl(scenarioUrl(s.ref, "tiles/{z}/{x}/{y}.png"))],
             tileSize: s.tiles.tile_size,
             minzoom: s.tiles.minzoom,
             maxzoom: s.tiles.maxzoom,
@@ -126,7 +126,7 @@ export default function MapView(props: Props) {
             before,
           );
           if (s.hasManholes) {
-            map.addSource(manholeId(s), { type: "geojson", data: `${location.origin}${scenarioUrl(s.ref, "manholes.geojson")}` });
+            map.addSource(manholeId(s), { type: "geojson", data: absoluteUrl(scenarioUrl(s.ref, "manholes.geojson")) });
             map.addLayer({
               id: manholeId(s),
               type: "circle",

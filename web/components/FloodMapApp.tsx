@@ -18,14 +18,18 @@ import {
   cellSeries,
   loadDataset,
   loadFrames,
+  loadScenario,
   loadTimeseries,
   manholeFactor,
   oscillationCount,
+  runRef,
   type BBox,
   type Dataset,
   type Scenario,
   type Timeseries,
 } from "@/lib/data";
+import { describeParams } from "@/lib/runConfig";
+import { getRun, hasSupabase, resultsUrlBase } from "@/lib/supabase";
 import { DEPTH_CLASSES, depthClass } from "@/lib/depth";
 import { hasVworld, type Basemap } from "@/lib/basemap";
 import { duration, hhmm, km2, meters, shortLabel } from "@/lib/format";
@@ -38,6 +42,30 @@ interface Selection {
 }
 
 const LEGEND_LEVEL = [0.5, 1.0, 1.6, 2.2]; // 범례 그림 속 물 높이 (m) — 각 등급의 윗부분
+
+const RUN_STATUS: Record<string, string> = { queued: "대기 중", running: "계산 중", failed: "실패", canceled: "취소됨" };
+
+/**
+ * 주소의 ?run=<번호> — 웹에서 요청한 계산 결과를 Supabase Storage에서 읽어 시나리오 목록에 더한다.
+ * 지도는 처음 만들 때 시나리오 타일을 모두 등록하므로, 자료를 화면에 넘기기 전에 불러 둔다.
+ */
+async function withRequestedRun(d: Dataset): Promise<{ data: Dataset; runId: string | null; note: string | null }> {
+  const id = Number(new URLSearchParams(location.search).get("run"));
+  if (!Number.isInteger(id) || id <= 0) return { data: d, runId: null, note: null };
+  if (!hasSupabase()) return { data: d, runId: null, note: "계산 결과 서버(Supabase) 설정이 없어 계산 결과를 불러오지 못했습니다." };
+  try {
+    const row = await getRun(id);
+    if (!row) return { data: d, runId: null, note: `계산 ${id}번을 찾지 못했습니다.` };
+    if (row.status !== "done" || !row.files_prefix)
+      return { data: d, runId: null, note: `계산 ${id}번은 아직 결과가 없습니다 (${RUN_STATUS[row.status] ?? row.status}).` };
+    if (row.model_version !== d.version)
+      return { data: d, runId: null, note: `계산 ${id}번은 모형 ${row.model_version} 결과라 지금 지도(모형 ${d.version})와 함께 보이지 않습니다.` };
+    const sc = await loadScenario(runRef(row, resultsUrlBase(), d.model.run));
+    return { data: { ...d, scenarios: [...d.scenarios, sc] }, runId: sc.ref.scenario_id, note: null };
+  } catch (e) {
+    return { data: d, runId: null, note: `계산 ${id}번 결과를 불러오지 못했습니다 (${e instanceof Error ? e.message : String(e)}).` };
+  }
+}
 
 function defaultScenario(list: Scenario[]): string {
   // 처음 화면: 바꾼 입력이 없는(실제 사건 재현) 조건 가운데 도시 침수(맨홀)를 넣은 것
@@ -69,6 +97,7 @@ export default function FloodMapApp() {
   const [river, setRiver] = useState<RiverData | null>(null);
   const [about, setAbout] = useState(false);
   const [focus, setFocus] = useState<{ lngLat: [number, number]; zoom: number; seq: number } | null>(null);
+  const [runNote, setRunNote] = useState<string | null>(null);
 
   // 비교용 실제 침수흔적 (있을 때만)
   useEffect(() => {
@@ -84,9 +113,13 @@ export default function FloodMapApp() {
 
   useEffect(() => {
     loadDataset()
-      .then((d) => {
+      .then(withRequestedRun)
+      .then(({ data: d, runId, note }) => {
         setData(d);
-        setActiveId(defaultScenario(d.scenarios));
+        // ?s=<시나리오 ID> 로 미리 계산된 조건을 바로 열 수 있다 (/run 에서 같은 조건을 찾았을 때)
+        const want = new URLSearchParams(location.search).get("s");
+        setActiveId(runId ?? (d.scenarios.some((s) => s.ref.scenario_id === want) ? (want as string) : defaultScenario(d.scenarios)));
+        setRunNote(note);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -94,18 +127,23 @@ export default function FloodMapApp() {
   const index = useMemo(() => (data ? new CellIndex(data.mesh) : null), [data]);
   const active = data?.scenarios.find((s) => s.ref.scenario_id === activeId) ?? null;
   const internalCount = Math.max(0, ...(data?.scenarios.map((s) => s.kpi.internal_inflow?.count ?? 0) ?? [0]));
-  // 해석 조건 묶음: 기준 시나리오(하천 범람 / 하천 범람 + 도시 침수)별로, 안에서는 맨홀 월류량 배율 순서
+  // 해석 조건 묶음: 기준 시나리오(하천 범람 / 하천 범람 + 도시 침수)별로, 안에서는 맨홀 월류량 배율 순서.
+  // 웹에서 요청한 계산(run_id)은 여러 입력을 바꿀 수 있어 배율 줄과 따로 '웹 계산' 줄에 둔다.
   const groups = useMemo(() => {
     const m = new Map<string, Scenario[]>();
     for (const s of data?.scenarios ?? []) {
       const k = baseOf(s.ref);
       m.set(k, [...(m.get(k) ?? []), s]);
     }
-    return [...m.entries()].map(([base, list]) => ({
-      base,
-      list: [...list].sort((a, b) => manholeFactor(a.ref) - manholeFactor(b.ref)),
-      main: list.find((s) => !s.ref.params) ?? list[0],
-    }));
+    return [...m.entries()].map(([base, all]) => {
+      const list = all.filter((s) => s.ref.run_id === undefined);
+      return {
+        base,
+        list: [...list].sort((a, b) => manholeFactor(a.ref) - manholeFactor(b.ref)),
+        runs: all.filter((s) => s.ref.run_id !== undefined),
+        main: list.find((s) => !s.ref.params) ?? list[0] ?? all[0],
+      };
+    });
   }, [data]);
   const activeGroup = active ? groups.find((g) => g.base === baseOf(active.ref)) ?? null : null;
 
@@ -242,6 +280,7 @@ export default function FloodMapApp() {
           <a href="#map" aria-current="page">
             침수 지도
           </a>
+          <a href="/run">조건 설정·실행</a>
           <button type="button" onClick={() => setAbout(true)}>
             모형 설명
           </button>
@@ -505,10 +544,41 @@ export default function FloodMapApp() {
                 </div>
               </div>
             )}
+            {activeGroup && activeGroup.runs.length > 0 && (
+              <div className="factor">
+                <span id="run-title">웹 계산</span>
+                <div
+                  className="seg"
+                  role="radiogroup"
+                  aria-labelledby="run-title"
+                  style={{ gridTemplateColumns: `repeat(${activeGroup.runs.length}, minmax(0, 1fr))` }}
+                >
+                  {activeGroup.runs.map((s) => (
+                    <button
+                      key={s.ref.scenario_id}
+                      type="button"
+                      role="radio"
+                      aria-checked={s.ref.scenario_id === activeId}
+                      aria-label={`웹에서 요청한 계산 ${s.ref.run_id}번`}
+                      onClick={() => setActiveId(s.ref.scenario_id)}
+                    >
+                      계산 {s.ref.run_id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="cond-note">
               하천 범람: 냉천 월류 · 도시 침수: 맨홀 {internalCount.toLocaleString("ko-KR")}곳 월류 유량을 함께 넣어 계산
               {activeGroup && activeGroup.list.length > 1 && " · 맨홀 월류량: 힌남노 때 계산한 맨홀 유량에 곱한 배율 (×1이 실제 사건, 나머지는 가정)"}
             </p>
+            {active?.ref.run_id !== undefined && (
+              <p className="cond-note">
+                <strong>계산 {active.ref.run_id}</strong> 바꾼 조건: {describeParams(data.model.run ?? { bases: {}, params: [] }, active.ref.params) || "없음 (힌남노 조건 그대로)"}{" "}
+                · <a href="/run">조건 설정·실행</a>
+              </p>
+            )}
+            {runNote && <p className="warn small">{runNote}</p>}
           </section>
         )}
 
@@ -599,6 +669,9 @@ export default function FloodMapApp() {
           <button type="button" className="btn-outline" onClick={() => setAbout(true)}>
             모형 설명
           </button>
+          <a className="btn-outline narrow-only" href="/run">
+            조건 설정·실행
+          </a>
           {!sel && <span className="muted small hint">지도를 누르면 그 자리의 침수심을 볼 수 있습니다</span>}
         </div>
 
