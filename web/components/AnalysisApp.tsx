@@ -182,7 +182,7 @@ export default function AnalysisApp() {
       .filter((x): x is { s: Summary; v: (number | null)[] } => x.v !== null)
       .map(({ s, v }) => ({ id: s.ref.scenario_id, name: nameOf(s), short: shortOf(s, pair), color: colors.get(s.ref.scenario_id) ?? "#888", values: v }));
 
-  const bbox: BBox | null = view ?? pair?.b.tiles.bounds ?? null;
+  const bbox: BBox | null = cmp?.wet_bbox ?? view ?? pair?.b.tiles.bounds ?? null;
 
   return (
     <div className="run-app">
@@ -228,7 +228,7 @@ export default function AnalysisApp() {
               </div>
               <div className="cmp-grid">
                 <div className="cmp-mapbox">
-                  {bbox && (
+                  {bbox && (cmp || view) && (
                     <CompareMap
                       a={pair.a}
                       b={pair.b}

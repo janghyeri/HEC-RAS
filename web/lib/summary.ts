@@ -83,6 +83,8 @@ export interface CompareInfo {
   area_a_km2: number;
   area_b_km2: number;
   a_only_km2: number;
+  /** 분류된 곳 범위(화소 1–99 %) — 처음 지도 범위 */
+  wet_bbox?: [number, number, number, number];
   deeper_added_depth_m: { p50: number; p90: number } | null;
   basis: string;
   generated_at: string;

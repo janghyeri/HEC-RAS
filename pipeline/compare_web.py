@@ -137,12 +137,20 @@ def build(a_png: Path, b_png: Path, meta: dict, bbox, out: Path, a_id: str, b_id
     a_only = wa & ~wb
     d = (b - a)[cat == 2]
     areas = {c["key"]: km2(cat == c["id"]) for c in CATEGORIES}
+    rr, cc = np.nonzero(cat > 0)                  # 분류된 곳 범위 (화면 처음 범위, 흩어진 작은 화소는 빼려고 1–99 %)
+    c0, c1 = np.percentile(cc, [1, 99])
+    r0, r1 = np.percentile(rr, [1, 99])
+    xs = origin[0] + np.array([c0, c1 + 1]) * pixel[0]
+    ys = origin[1] - np.array([r0, r1 + 1]) * pixel[1]
+    lon, lat = tm_korea.to_lonlat(np.array([xs[0], xs[1], xs[0], xs[1]]), np.array([ys[0], ys[0], ys[1], ys[1]]))
+    wet_bbox = [round(float(lon.min()), 6), round(float(lat.min()), 6), round(float(lon.max()), 6), round(float(lat.max()), 6)]
     info = {
         "a": a_id, "b": b_id,
         "min_depth_m": MIN_DEPTH, "deeper_m": DEEPER_M,
         "categories": [{**c, "area_km2": areas[c["key"]]} for c in CATEGORIES],
         "area_a_km2": km2(wa), "area_b_km2": km2(wb),
         "a_only_km2": km2(a_only),
+        "wet_bbox": wet_bbox,
         "deeper_added_depth_m": {"p50": round(float(np.median(d)), 2), "p90": round(float(np.percentile(d, 90)), 2)} if d.size else None,
         "check": {"urban_minus_a_only_km2": round(areas["urban"] - km2(a_only), 4),
                   "area_b_minus_a_km2": round(km2(wb) - km2(wa), 4)},
