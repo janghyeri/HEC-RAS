@@ -124,6 +124,13 @@ class Worker:
             except Exception as e:
                 log(f"하천 수면 실패 (2D 결과는 올림): {type(e).__name__}: {e}")
             out = job_dir / "web_pub" / ver / sid
+            try:                                        # 10분 침수심 이미지 (지도 시간 재생·3D)
+                from pipeline.frames_web import make_frames
+
+                fr = make_frames(res.hdf, res.terrain, out, sid, ver)
+                log(f"10분 침수심 이미지 {fr['count']}장 ({fr['bytes_total'] / 1e6:.1f} MB)")
+            except Exception as e:
+                log(f"침수심 이미지 실패 (최대 수심 지도는 올림): {type(e).__name__}: {e}")
             log("결과 파일 올리기", progress="결과 올리는 중")
             n = 0
             for f in UPLOAD_FILES:
@@ -132,6 +139,8 @@ class Worker:
                     self.sb.upload(BUCKET, f"{prefix}/{f}", p.read_bytes(), _ctype(p))
                     n += 1
             n += self.sb.upload_dir(BUCKET, f"{prefix}/tiles", out / "tiles", log=log)
+            if (out / "frames" / "frames.json").exists():
+                n += self.sb.upload_dir(BUCKET, f"{prefix}/frames", out / "frames", log=log)
             tasks = _tasks(res.run.get("compute_messages"))
             self.sb.update("runs", {"id": rid}, {
                 "status": "done", "finished_at": now_iso(), "progress": "완료", "kpi": kpi,

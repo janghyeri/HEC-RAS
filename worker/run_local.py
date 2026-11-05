@@ -158,6 +158,15 @@ def main():
                 except Exception as e:
                     river = {"ok": False, "error": f"{type(e).__name__}: {e}"}
                     log(f"하천 수면 실패: {river['error']}")
+                try:                                    # 10분 침수심 이미지 (지도 시간 재생·3D)
+                    from pipeline.frames_web import make_frames
+
+                    fr = make_frames(res.hdf, res.terrain, job_dir / "web_pub" / a.model_version / a.name, a.name,
+                                     a.model_version)
+                    river["frames"] = {"count": fr["count"], "MB": round(fr["bytes_total"] / 1e6, 2), "check": fr["check"]}
+                    log(f"10분 침수심 이미지 {fr['count']}장")
+                except Exception as e:
+                    log(f"침수심 이미지 실패: {type(e).__name__}: {e}")
                 report["export"] = {"ok": True, "publish": pub, "river": river,
                                     "kpi": {k: kpi.get(k) for k in ("inundation_area_km2", "onset_time",
                                                                     "peak_instant_area", "max_depth_m", "river",
