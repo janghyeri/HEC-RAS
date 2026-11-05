@@ -16,11 +16,11 @@
 | 5.2 | PC 시험 — 배율 1.0·후처리 끔(T1), 맨홀 ×1.5(T2) | `worker/run_local.py`, `C:\Hec-Ras\HECRASMCP\test_step5.bat` | T1이 기준 결과와 '같음'(침수면적 ±1 %, 99분위 0.02 m), 빠진 HDF 자료 목록, 계산 시간 | ☑ 11/2 — R1 같음(+0.08 %, 99분위 0.019 m), HEC-RAS 3분 43초, 빠진 자료는 1D 후처리 프로파일 82개, R2 맨홀 ×1.5 정상. 첫 시험의 멈춤은 Ras.exe 인자 따옴표 누락이 원인 |
 | 5.3 | **[판단]** 후처리 끄기 채택 여부 | — | 5.2 결과: 2D·하천 KPI가 그대로이고 시간이 줄었는지 | ☑ 11/2 — 끄지 않음: 웹 실행도 정석대로 후처리 켬 (나중에 하천 단면 상세값 활용 대비, 1회 6~8분) |
 | 5.3a | 후처리 켠 실행 시험 (P1, 배율 1.0) | `C:\Hec-Ras\HECRASMCP\test_step5_post.bat` | Ras.exe가 후처리 도중 돌아온 뒤에도 'Complete Process'까지 기다리는지, 기준과 '같음'·빠진 자료 0개, 계산 시간 | ☑ 11/2 — HEC-RAS 8분 22초(작업 전체 8분 39초), 빠진 자료 0개, 웹 파일 정상. 침수면적 +0.11 %·우안 99분위 0.0035 m이지만 좌안 99분위 0.029 m로 '다름' → 모형 정확도는 웹 작업과 떼어 나중에 모형 개선 때 다룸 (11/2 사용자 결정), 지금은 출력·표시가 목적 |
-| 5.4 | Supabase 테이블·권한·버킷 | `supabase/migrations/20261030000000_runs.sql` | 로컬 Postgres로 권한 시험(10/30): 익명 요청 거부, 중복 조건 거부, 1인 2건·전체 5건 제한, 워커만 claim | ◐ 계정 생성 후 `supabase db push` |
-| 5.5 | 워커 — 대기열에서 가져와 계산·변환·업로드, heartbeat | `worker/run_worker.py`, `worker/supabase_rest.py`, `worker/.env` | 가짜 Supabase 서버로 1건 처리 시험(10/30: 업로드 188개, 상태 순서, 실패 기록). 실제 프로젝트에서 `--once` 1건 | ◐ |
+| 5.4 | Supabase 테이블·권한·버킷 | `supabase/migrations/20261030000000_runs.sql` | 로컬 Postgres로 권한 시험(10/30): 익명 요청 거부, 중복 조건 거부, 1인 2건·전체 5건 제한, 워커만 claim | ☑ 11/2 GitHub 연동으로 반영 (`supabase db push` 대신) |
+| 5.5 | 워커 — 대기열에서 가져와 계산·변환·업로드, heartbeat | `worker/run_worker.py`, `worker/supabase_rest.py`, `worker/.env` | 가짜 Supabase 서버로 1건 처리 시험(10/30: 업로드 188개, 상태 순서, 실패 기록). 실제 프로젝트에서 `--once` 1건 | ☑ 11/3 실제 계산 1 처리 (`start_worker.bat`) |
 | 5.6 | 웹 `/run` — 로그인(분석 모드), 조건 입력(범위는 model.json), 요청, 상태·로그 표시, 계산 서버 켜짐/꺼짐 | `web/app/run/`, `web/lib/supabase.ts` | 범위 밖 값 막힘, 같은 조건은 기존 결과로 바로 이동, 워커 꺼짐 표시 | ☑ 11/3 배포. 로그인은 익명 로그인(11/2 결정). 조건 해시 Python과 9개 조건 일치, 가짜 Supabase로 요청·취소·범위 밖·같은 조건 시험. 실제 계산 1(맨홀 ×1.5 + 조위 +0.5 m): 요청→완료 8분 52초 |
 | 5.7 | 결과 화면이 Supabase 결과도 읽기 (`/data` 와 같은 파일 구성) | `web/lib/data.ts` | run-<id> 결과가 지도·요약·지점 곡선에 뜸 | ☑ `/?run=<번호>` (Storage 공개 주소, '웹 계산' 줄). 11/3 계산 1이 지도·주요 결과·지점 곡선·조건별 비교에 뜸 |
-| 5.8 | **[판단]** `/run` 입력 범위 확정 | `pipeline/models/v1.json` | 사용자 확정 후 `params_status` 갱신 | ☐ |
+| 5.8 | **[판단]** `/run` 입력 범위 확정 | `pipeline/models/v1.json` | 사용자 확정 후 `params_status` 갱신 | ☑ 11/5 확정: 맨홀 월류량 ×0.5–1.5 (×0은 외수 단독과 같아 뺌), 상류·측방 ×0.5–1.5·조위 0~+1 m 그대로 |
 | 5.9 | 재현성 시험 — 웹에서 배율 1.0 실행 = 보유 결과 | `worker/compare_results.py` | 판정 '같음', 소요 시간 기록 → `1. 과정/표·수치/검증결과.md` | ☐ |
 | 5.10 | 워커 자동 실행 (PC 켤 때 시작) | 작업 스케줄러 | PC 재시작 후 heartbeat | ☐ |
 | 5.11 | `hecras-run` Skill 저장 | `.claude/skills/hecras-run/SKILL.md` | — | ☐ |
