@@ -2,13 +2,14 @@
 
 // F-01 2D 최대 침수심 지도 (docs/PRD.md). 디자인 최종안(2026-11-02): 위쪽 남색 머리글은 A안, 내용은 최종안
 // (해석 조건 · 주요 결과 표 · 시간별 침수면적 그래프 · 사람 키 범례). 휴대폰은 아래 시트, PC는 왼쪽 정보판.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { type Pick } from "./MapView";
 import Sparkline from "./Sparkline";
 import AreaChart from "./AreaChart";
 import PersonLevel from "./PersonLevel";
 import SearchBox, { type Place } from "./SearchBox";
 import AboutDialog, { SAFETY_GUIDE_URL } from "./AboutDialog";
+import TopBar from "./TopBar";
 import { CellIndex } from "@/lib/cells";
 import { loadRiver, riverAt, type RiverData } from "@/lib/river";
 import {
@@ -16,6 +17,9 @@ import {
   baseOf,
   cellResult,
   cellSeries,
+  frameCorners,
+  frameUrl,
+  loadFramesInfo,
   loadDataset,
   loadFrames,
   loadScenario,
@@ -25,6 +29,7 @@ import {
   runRef,
   type BBox,
   type Dataset,
+  type FramesInfo,
   type Scenario,
   type Timeseries,
 } from "@/lib/data";
@@ -98,6 +103,11 @@ export default function FloodMapApp() {
   const [about, setAbout] = useState(false);
   const [focus, setFocus] = useState<{ lngLat: [number, number]; zoom: number; seq: number } | null>(null);
   const [runNote, setRunNote] = useState<string | null>(null);
+  // 시간대별 재생 (10분 침수심 이미지). frameIdx = null 이면 최대 침수심 지도
+  const [framesInfo, setFramesInfo] = useState<FramesInfo | null>(null);
+  const [frameIdx, setFrameIdx] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const preloaded = useRef<string>("");
 
   // 비교용 실제 침수흔적 (있을 때만)
   useEffect(() => {
@@ -159,6 +169,44 @@ export default function FloodMapApp() {
       stale = true;
     };
   }, [active]);
+
+  // 10분 침수심 이미지 설명 (없으면 재생 버튼을 숨김)
+  useEffect(() => {
+    setFramesInfo(null);
+    if (!active) return;
+    let stale = false;
+    loadFramesInfo(active.ref).then((f) => {
+      if (!stale) setFramesInfo(f);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [active]);
+
+  // 재생: 0.5초에 10분씩, 끝나면 멈춤
+  useEffect(() => {
+    if (!playing || !framesInfo) return;
+    const t = setInterval(() => {
+      setFrameIdx((i) => {
+        const next = i === null ? 0 : i + 1;
+        if (next >= framesInfo.count - 1) setPlaying(false);
+        return Math.min(next, framesInfo.count - 1);
+      });
+    }, 500);
+    return () => clearInterval(t);
+  }, [playing, framesInfo]);
+
+  // 처음 시간대별로 볼 때 이미지 70장을 미리 받아 둔다 (재생이 끊기지 않게)
+  useEffect(() => {
+    if (!active || !framesInfo || frameIdx === null) return;
+    const key = `${active.ref.scenario_id}|${framesInfo.generated_at}`;
+    if (preloaded.current === key) return;
+    preloaded.current = key;
+    for (let i = 0; i < framesInfo.count; i++) {
+      const img = new Image();
+      img.src = frameUrl(active.ref, framesInfo, i);
+    }
+  }, [active, framesInfo, frameIdx]);
 
   // 시간별 침수면적
   useEffect(() => {
@@ -262,38 +310,58 @@ export default function FloodMapApp() {
 
   const legendItems = DEPTH_CLASSES.map((c, i) => ({ ...c, level: LEGEND_LEVEL[i] ?? c.lo }));
 
-  const timelineWide = areaSeries && active ? <AreaChart times={active.meta.frames.times} values={areaSeries} height={56} /> : null;
+  const timeMode = frameIdx !== null && framesInfo !== null;
+  const frame = timeMode && active && framesInfo ? { url: frameUrl(active.ref, framesInfo, frameIdx as number), corners: frameCorners(framesInfo) } : null;
+  const togglePlay = () => {
+    if (!framesInfo) return;
+    if (playing) return setPlaying(false);
+    if (frameIdx === null || frameIdx >= framesInfo.count - 1) setFrameIdx(0);
+    setPlaying(true);
+  };
+  const playBtn = framesInfo ? (
+    <button type="button" className="play-btn" onClick={togglePlay} aria-label={playing ? "멈춤" : "시간대별 재생"} title={playing ? "멈춤" : "02:00부터 10분씩 재생"}>
+      {playing ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M7 4l13 8-13 8z" />
+        </svg>
+      )}
+    </button>
+  ) : null;
+  const maxBtn = timeMode ? (
+    <button
+      type="button"
+      className="link-btn max-btn"
+      onClick={() => {
+        setPlaying(false);
+        setFrameIdx(null);
+      }}
+    >
+      최대 침수심 보기
+    </button>
+  ) : null;
+  const pick = framesInfo
+    ? (i: number) => {
+        setPlaying(false);
+        setFrameIdx(i);
+      }
+    : undefined;
+  const timelineWide =
+    areaSeries && active ? (
+      <AreaChart times={active.meta.frames.times} values={areaSeries} height={56} current={timeMode ? frameIdx : null} onPick={pick} lead={playBtn} tail={maxBtn} />
+    ) : null;
   const timelineNarrow =
-    areaSeries && active ? <AreaChart times={active.meta.frames.times} values={areaSeries} height={44} compact /> : null;
+    areaSeries && active ? (
+      <AreaChart times={active.meta.frames.times} values={areaSeries} height={44} compact current={timeMode ? frameIdx : null} onPick={pick} lead={playBtn} tail={maxBtn} />
+    ) : null;
+  const legendTitle = timeMode && active ? `침수심 (m) · ${hhmm(active.meta.frames.times[frameIdx as number])}` : "최대 침수심 (m)";
 
   return (
     <div className="app">
-      {/* ---------- 머리글 (A안) ---------- */}
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-sub">
-            2022년 9월 6일 태풍 힌남노<span className="wide-only"> · 경상북도 포항시 냉천</span>
-          </span>
-          <span className="brand-title">힌남노 침수 다시보기</span>
-        </div>
-        <nav className="topnav wide-only" aria-label="주 메뉴">
-          <a href="#map" aria-current="page">
-            침수 지도
-          </a>
-          <a href="/run">조건 설정·실행</a>
-          <button type="button" onClick={() => setAbout(true)}>
-            모형 설명
-          </button>
-          <a href={SAFETY_GUIDE_URL} target="_blank" rel="noreferrer">
-            국민행동요령 <ExternalIcon />
-          </a>
-        </nav>
-        <button type="button" className="menu-btn narrow-only" aria-label="모형 설명과 안내 열기" onClick={() => setAbout(true)}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </svg>
-        </button>
-      </header>
+      <TopBar current="map" onAbout={() => setAbout(true)} />
 
       {/* ---------- 지도 ---------- */}
       <main id="map" className="stage" aria-label="침수 지도">
@@ -311,6 +379,7 @@ export default function FloodMapApp() {
             onPick={onPick}
             focus={focus}
             onToggleBasemap={toggleBasemap}
+            frame={frame}
           />
         ) : (
           <div className="map map-loading" aria-busy="true">
@@ -332,7 +401,7 @@ export default function FloodMapApp() {
         )}
 
         <div className="map-legend narrow-only" aria-label="최대 침수심 범례">
-          <span className="map-legend-title">최대 침수심 (m)</span>
+          <span className="map-legend-title">{legendTitle}</span>
           {DEPTH_CLASSES.map((c) => (
             <span key={c.range} className="map-legend-row">
               <span className="chip" style={{ background: c.color }} aria-hidden="true" />
@@ -435,6 +504,12 @@ export default function FloodMapApp() {
                   </div>
                 </div>
                 <dl className="facts">
+                  {timeMode && series && series.length > 0 && (
+                    <>
+                      <dt>{hhmm(active.meta.frames.times[frameIdx as number])} 수심</dt>
+                      <dd>{series[frameIdx as number] >= 0.1 ? meters(series[frameIdx as number]) : "0.1 m 미만"}</dd>
+                    </>
+                  )}
                   <dt>침수 시작 시각</dt>
                   <dd>{series === null ? "…" : onsetHere >= 0 ? hhmm(active.meta.frames.times[onsetHere]) : "—"}</dd>
                   <dt>최대 침수 시각</dt>
@@ -623,7 +698,7 @@ export default function FloodMapApp() {
         )}
 
         <section className="legend wide-only" aria-labelledby="legend-title">
-          <h2 id="legend-title">최대 침수심 범례</h2>
+          <h2 id="legend-title">{timeMode ? `${legendTitle.replace(" (m)", "")} 범례` : "최대 침수심 범례"}</h2>
           <ul>
             {legendItems.map((c) => (
               <li key={c.range}>
@@ -669,9 +744,6 @@ export default function FloodMapApp() {
           <button type="button" className="btn-outline" onClick={() => setAbout(true)}>
             모형 설명
           </button>
-          <a className="btn-outline narrow-only" href="/run">
-            조건 설정·실행
-          </a>
           {!sel && <span className="muted small hint">지도를 누르면 그 자리의 침수심을 볼 수 있습니다</span>}
         </div>
 

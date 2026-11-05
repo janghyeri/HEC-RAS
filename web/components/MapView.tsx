@@ -4,7 +4,7 @@
 // maplibre-gl은 브라우저에서만 불러온다 (서버 렌더링 중에는 window가 없음).
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
-import type { GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
+import type { GeoJSONSource, ImageSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BASE_LAYERS, baseStyle, hasVworld, type Basemap } from "@/lib/basemap";
 import { absoluteUrl, scenarioUrl, type BBox, type Scenario } from "@/lib/data";
 import type { TraceCollection } from "@/lib/reference";
@@ -29,6 +29,8 @@ interface Props {
   focus: { lngLat: [number, number]; zoom: number; seq: number } | null;
   /** 휴대폰 지도 버튼 묶음의 배경지도 바꾸기 */
   onToggleBasemap: () => void;
+  /** 시간대별 재생: 이 이미지(10분 침수심)를 최대 수심 대신 보여 준다 */
+  frame?: { url: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
 }
 
 const floodId = (s: Scenario) => `flood-${s.ref.scenario_id}`;
@@ -67,7 +69,7 @@ class BasemapControl {
 }
 
 export default function MapView(props: Props) {
-  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap } =
+  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap, frame = null } =
     props;
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
@@ -170,18 +172,38 @@ export default function MapView(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 시간대별 이미지 (한 장을 계속 바꿔 끼운다 — 이미지는 브라우저 캐시에서 바로 읽힘)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("frame") as ImageSource | undefined;
+    if (!frame) {
+      if (map.getLayer("frame")) map.setLayoutProperty("frame", "visibility", "none");
+      return;
+    }
+    const url = absoluteUrl(frame.url);
+    if (!src) {
+      map.addSource("frame", { type: "image", url, coordinates: frame.corners });
+      const before = map.getLayer(BASE_LAYERS.label) ? BASE_LAYERS.label : map.getLayer("traces-halo") ? "traces-halo" : undefined;
+      map.addLayer({ id: "frame", type: "raster", source: "frame", paint: { "raster-opacity": 0.9, "raster-fade-duration": 0, "raster-resampling": "nearest" } }, before);
+    } else {
+      src.updateImage({ url, coordinates: frame.corners });
+      map.setLayoutProperty("frame", "visibility", "visible");
+    }
+  }, [ready, frame]);
+
   // 시나리오 · 맨홀 표시
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     for (const s of scenarios) {
-      map.setLayoutProperty(floodId(s), "visibility", s.ref.scenario_id === activeId ? "visible" : "none");
+      map.setLayoutProperty(floodId(s), "visibility", s.ref.scenario_id === activeId && !frame ? "visible" : "none");
       if (s.hasManholes) {
         const on = showManholes && s.ref.scenario_id === activeId;
         map.setLayoutProperty(manholeId(s), "visibility", on ? "visible" : "none");
       }
     }
-  }, [ready, scenarios, activeId, showManholes]);
+  }, [ready, scenarios, activeId, showManholes, frame !== null]);
 
   // 실제 침수흔적
   useEffect(() => {

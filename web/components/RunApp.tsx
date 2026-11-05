@@ -4,7 +4,7 @@
 // 입력 범위는 /data/<버전>/model.json 의 run 블록에서 읽는다 (워커와 같은 파일). 요청은 Supabase runs 표에 'queued'로 넣고,
 // 워커 PC가 가져가 HEC-RAS로 계산해 결과를 올린다. 같은 조건이 이미 있으면 새로 계산하지 않고 그 결과로 보낸다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SAFETY_GUIDE_URL } from "./AboutDialog";
+import TopBar from "./TopBar";
 import { loadIndex, loadModelInfo, type ScenarioRef } from "@/lib/data";
 import { km2, shortLabel } from "@/lib/format";
 import {
@@ -318,26 +318,7 @@ export default function RunApp() {
 
   return (
     <div className="run-app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-sub">
-            2022년 9월 6일 태풍 힌남노<span className="wide-only"> · 경상북도 포항시 냉천</span>
-          </span>
-          <span className="brand-title">힌남노 침수 다시보기</span>
-        </div>
-        <nav className="topnav wide-only" aria-label="주 메뉴">
-          <a href="/">침수 지도</a>
-          <a href="/run" aria-current="page">
-            조건 설정·실행
-          </a>
-          <a href={SAFETY_GUIDE_URL} target="_blank" rel="noreferrer">
-            국민행동요령
-          </a>
-        </nav>
-        <a className="top-link narrow-only" href="/">
-          침수 지도
-        </a>
-      </header>
+      <TopBar current="run" />
 
       <main className="runpage">
         <div className="run-wrap">

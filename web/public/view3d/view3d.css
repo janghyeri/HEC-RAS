@@ -1,0 +1,372 @@
+/* 3D 재현 화면 — 색·글꼴은 web/app/globals.css(디자인 최종안)와 같게 */
+:root {
+  --navy: #063a74;
+  --navy-dark: #052b57;
+  --ink: #1e2124;
+  --text-2: #464c53;
+  --muted: #5f6b76;
+  --line: #d6dde4;
+  --line-mid: #c9d2db;
+  --line-strong: #a9b4bf;
+  --soft: #f4f6f8;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--navy);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.topbar {
+  background: var(--navy);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 32px;
+  padding: calc(4px + env(safe-area-inset-top)) 8px 4px 16px;
+  min-height: 56px;
+  z-index: 6;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-sub {
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.85;
+}
+
+.brand-title {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.topnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.topnav a {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 10px 8px;
+  border-bottom: 3px solid transparent;
+  opacity: 0.88;
+}
+
+.topnav a[aria-current="page"] {
+  font-weight: 700;
+  opacity: 1;
+  border-bottom-color: #ffffff;
+}
+
+.stage3d {
+  position: relative;
+  min-height: 0;
+  background: #1e2a36;
+}
+
+#vmap {
+  position: absolute;
+  inset: 0;
+}
+
+.v3-status {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.v3-status.err {
+  border-left: 3px solid #8f1d14;
+}
+
+.v3-panel {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 48vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-top: 1px solid var(--line-strong);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 20px rgba(5, 43, 87, 0.18);
+  padding: 4px 14px calc(12px + env(safe-area-inset-bottom));
+}
+
+.v3-panel.folded .v3-body {
+  display: none;
+}
+
+.v3-fold {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+.v3-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v3-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.v3-field select {
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0 8px;
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--navy);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg button {
+  min-height: 40px;
+  border: 0;
+  background: #ffffff;
+  color: var(--navy);
+}
+
+.seg button + button {
+  border-left: 1px solid var(--navy);
+}
+
+.seg button[aria-checked="true"] {
+  background: var(--navy);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.seg button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.v3-time {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.v3-time[hidden] {
+  display: none;
+}
+
+.play-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--navy);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v3-time input[type="range"] {
+  width: 100%;
+  accent-color: var(--navy);
+}
+
+.v3-tlabel {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}
+
+.v3-now {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-legend {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 2px solid var(--ink);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.v3-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v3-legend i {
+  width: 18px;
+  height: 11px;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.v3-legend span {
+  color: var(--muted);
+}
+
+.v3-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.v3-views button {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.v3-views label {
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.v3-pick {
+  font-size: 13.5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.v3-pick-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.v3-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.v3-nokey {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  margin: 0;
+  background: #fff3db;
+  padding: 8px 12px;
+  border-left: 3px solid #8a5c00;
+}
+
+@media (max-width: 767px) {
+  .wide-only {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .topbar {
+    padding: 10px 24px;
+    justify-content: flex-start;
+  }
+
+  .brand-title {
+    font-size: 20px;
+    line-height: 28px;
+  }
+
+  .topnav a {
+    font-size: 16px;
+    padding: 10px 14px;
+  }
+
+  .v3-panel {
+    left: 16px;
+    right: auto;
+    top: 16px;
+    bottom: auto;
+    width: 340px;
+    max-height: calc(100% - 32px);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 4px 16px 14px;
+  }
+}

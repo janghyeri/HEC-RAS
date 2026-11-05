@@ -82,6 +82,30 @@ export interface Kpi {
   "duration_ge_0.3m"?: { area_km2_ge_1h: number; max_hours: number };
 }
 
+/** 분석 화면에서 쓰는 kpi.json 나머지 항목 (pipeline/export_web.py) */
+export interface RiverPoint {
+  rs: string;
+  q_max_m3s: number;
+  q_max_time: string;
+  ws_max_m: number;
+  ws_max_time: string;
+}
+
+export interface KpiFull extends Kpi {
+  inundation_area_km2_raster_check?: Record<string, number>;
+  river: { q_max_anywhere: RiverPoint; upstream?: RiverPoint; outlet?: RiverPoint };
+  lateral_structures?: {
+    name: string;
+    to_2d_area: string;
+    peak_m3s: number;
+    volume_to_2d_m3: number;
+    volume_back_to_river_m3: number;
+    net_volume_m3: number;
+    river_at_structure?: RiverPoint;
+  }[];
+  volume_error_pct?: Record<string, number>;
+}
+
 /** pipeline/export_web.py timeseries.json — 10분 출력 시각별 값 */
 export interface Timeseries {
   times: string[];
@@ -90,6 +114,8 @@ export interface Timeseries {
   river_ws_m: number[][];
   internal_inflow_total_m3s: number[];
   "inundation_area_ge_0.1m_km2": number[];
+  /** 측방 구조물 이름 → 시각별 유량 (+ 하천→2D) */
+  lateral_flow_m3s?: Record<string, number[]>;
 }
 
 export interface ScenarioMeta {
@@ -276,4 +302,49 @@ export function oscillationCount(series: number[], step = OSC_STEP_M): number {
     if (a * b < 0 && Math.abs(a) > step && Math.abs(b) > step) n++;
   }
   return n;
+}
+
+// ------------------------------------------------------------------ 10분 침수심 이미지 (pipeline/frames_web.py)
+export interface FramesInfo {
+  count: number;
+  times: string[];
+  files: string; // "frames/{i:03d}.png"
+  bounds: BBox; // 서, 남, 동, 북 (경위도 격자)
+  width: number;
+  height: number;
+  pixel_m: number;
+  includes_river: boolean;
+  area_2d_km2: number[];
+  generated_at: string;
+}
+
+const framesInfoCache = new Map<string, Promise<FramesInfo | null>>();
+
+/** frames/frames.json — 없으면(이미지를 아직 안 만든 결과) null */
+export function loadFramesInfo(ref: ScenarioRef): Promise<FramesInfo | null> {
+  const key = `${ref.url_base ?? ""}|${ref.path}`;
+  let p = framesInfoCache.get(key);
+  if (!p) {
+    p = fetch(`${ref.url_base ?? DATA_ROOT}/${ref.path}/frames/frames.json?v=${encodeURIComponent(ref.generated_at)}`, { cache: "no-cache" })
+      .then((r) => (r.ok ? (r.json() as Promise<FramesInfo>) : null))
+      .catch(() => null);
+    framesInfoCache.set(key, p);
+  }
+  return p;
+}
+
+export function frameUrl(ref: ScenarioRef, info: FramesInfo, i: number): string {
+  const file = info.files.replace("{i:03d}", String(i).padStart(3, "0"));
+  return `${ref.url_base ?? DATA_ROOT}/${ref.path}/${file}?v=${encodeURIComponent(info.generated_at)}`;
+}
+
+/** 이미지 네 모서리 (왼위, 오위, 오아래, 왼아래) — MapLibre image 소스 좌표 */
+export function frameCorners(info: FramesInfo): [[number, number], [number, number], [number, number], [number, number]] {
+  const [w, s, e, n] = info.bounds;
+  return [
+    [w, n],
+    [e, n],
+    [e, s],
+    [w, s],
+  ];
 }
