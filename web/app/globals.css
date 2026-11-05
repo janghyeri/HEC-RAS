@@ -1574,7 +1574,8 @@ a:hover {
   touch-action: none;
 }
 
-.cmp-layer {
+/* maplibre-gl.css의 .maplibregl-map { position: relative } 보다 우선하도록 선택자를 한 단계 높인다 */
+.cmp-map .cmp-layer {
   position: absolute;
   inset: 0;
 }

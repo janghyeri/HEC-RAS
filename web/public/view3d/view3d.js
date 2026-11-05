@@ -149,9 +149,15 @@
       status("");
       setupPick();
       applyScenario();
-      setTimeout(function () {
-        view("tilt");
-      }, 300);
+      // 처음 비스듬한 시점으로. 브이월드가 초기화 끝에 카메라를 처음 위치로 되돌리는 일이 있어,
+      // 카메라가 아직 처음 위치(위에서 수직)에 있으면 몇 번 다시 보낸다 (사용자가 움직였으면 그대로 둔다)
+      var n = 0;
+      (function tilt() {
+        var cam = S.viewer.camera;
+        var atStart = cam.positionCartographic.height > 7000 && Math.abs(Cesium.Math.toDegrees(cam.pitch) + 90) < 1;
+        if (n === 0 || atStart) view("tilt");
+        if (++n < 5) setTimeout(tilt, 1500);
+      })();
     }
     try {
       var opts = {
