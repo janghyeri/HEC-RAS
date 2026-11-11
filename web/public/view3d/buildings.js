@@ -1,7 +1,12 @@
 /* 실사풍 건물 (/3d) — 국토교통부 GIS건물통합정보(브이월드 2D 데이터 API, LT_C_BLDGINFO)로 건물을 직접 세운다.
  *  - 외곽선 그대로, 높이 = 건물 높이(없으면 지상층수 × 층고), 바닥 = 브이월드 지형(sampleTerrain 15단계)
  *  - 지붕: 브이월드 항공사진(WMTS Satellite z18, 화소 약 0.5 m)을 잘라 입힘
- *  - 벽: 주용도(아파트·주택·상가·공장·공공)별 표현 + 실제 지상층수에 맞춘 층·창 — 실제 외벽 사진이 아님
+ *  - 벽: 주용도별 표현 + 실제 지상층수에 맞춘 층·창 — 실제 외벽 사진이 아님
+ *      아파트: 긴 면은 층마다 발코니 난간·통창(창살)·세대 벽, 짧은 면은 막힌 벽 + 작은 창 + 색 띠
+ *      주택: 면마다 창 1~3개(테두리), 몇 면은 1층 문, 일부 벽돌 무늬 / 상가: 1층 진열창 + 간판 띠
+ *      공장·창고: 판넬 골·이음, 아래 콘크리트 띠, 위쪽 띠창, 긴 면 셔터 / 공공: 큰 창 줄
+ *  - 흰색 모형(setStyle("white")): 무늬·사진 없이 흰 벽·지붕에 명암만
+ *  - 그림자: Primitive가 그림자를 드리우고 받음 (장면 그림자는 view3d.js에서 켬)
  *  - 2022-09-06 이후 사용승인된 건물은 뺀다 (힌남노 당시 없던 건물)
  * 카메라가 보는 곳 둘레의 웹 메르카토르 z16 타일(약 500 m) 단위로 불러오고, 멀어지면 지운다.
  * 자료 요청은 JSONP(브이월드 데이터 API는 CORS 머리글이 없음), 키는 이 사이트 주소에 등록된 브이월드 키.
@@ -42,17 +47,30 @@
 
   // ---------------------------------------------------------------- 셰이더 (재질 안에 모두 둔다 — 재질 uniform 이름이 바뀌어도 쓰도록)
   var MAT_SRC = [
-    // fwidth(창 무늬 흐리기)용. Cesium이 #extension 줄을 셰이더 맨 앞으로 옮긴다 (Primitive는 CustomShader와 달리 직접 켜야 함)
+    // fwidth(무늬 흐리기·경계 부드럽게)용. Cesium이 #extension 줄을 셰이더 맨 앞으로 옮긴다
     "#extension GL_OES_standard_derivatives : enable",
     "varying vec3 v_positionEC;",
     "varying vec3 v_normalEC;",
-    "varying vec4 v_facade;", // s(벽 둘레 m), t(바닥에서 높이 m), 층고(m), 표현 코드(묶음×64 + 씨앗)
-    "varying vec3 v_roof;", // 지붕 사진 좌표 s,t / 지붕이면 z = 1
+    "varying vec4 v_facade;", // 벽 안 위치 s(m, 면 시작부터), 바닥에서 높이 t(m), 층고(m), 표현 코드(묶음×64 + 씨앗)
+    "varying vec4 v_extra;", // 면 길이(m), 건물 높이(m), 지상층수, 지붕이면 1
+    "varying vec4 v_roof;", // 지붕 사진 좌표 s,t + 건물 중심의 사진 좌표
     "uniform sampler2D roofImg;",
     "uniform float roofOn;",
+    "uniform float whiteMode;", // 1 = 흰색 모형 (무늬·사진 없이 명암만)
     "float hb(float n) { return fract(sin(n * 12.9898) * 43758.5453); }",
-    "float box(float x, float a, float b) { return step(a, x) * step(x, b); }",
+    "float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
+    "float vn(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);",
+    "  return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), u.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), u.x), u.y); }",
+    // 부드러운 사각 띠: a~b 안이면 1 (경계 너비 w)
+    "float band(float x, float a, float b, float w) { return smoothstep(a - w, a + w, x) * (1.0 - smoothstep(b - w, b + w, x)); }",
+    // 일정 간격으로 되풀이되는 창: 간격 p, 창 폭 wd(가운데 기준), x는 m
+    "float rep(float x, float p, float wd, float w) { float u = (fract(x / p) - 0.5) * p; return band(u, -wd * 0.5, wd * 0.5, w); }",
     "vec3 pick4(float r, vec3 a, vec3 b, vec3 c, vec3 d) { return r < 0.25 ? a : (r < 0.5 ? b : (r < 0.75 ? c : d)); }",
+    "vec3 glassCol(float ty, float fh, float k) {",
+    "  vec3 dark = vec3(0.16, 0.20, 0.24) + 0.05 * k;",
+    "  vec3 skyc = vec3(0.56, 0.64, 0.72);",
+    "  return mix(dark, skyc, 0.18 + 0.32 * clamp(ty / fh, 0.0, 1.0) * k);",
+    "}",
     "czm_material czm_getMaterial(czm_materialInput materialInput) {",
     "  czm_material m = czm_getDefaultMaterial(materialInput);",
     "  vec3 n = normalize(v_normalEC);",
@@ -60,56 +78,116 @@
     "  vec3 upW = normalize((czm_inverseView * vec4(v_positionEC, 1.0)).xyz);",
     "  vec3 eastW = normalize(cross(vec3(0.0, 0.0, 1.0), upW));",
     "  vec3 northW = cross(upW, eastW);",
+    "  vec3 upE = normalize(czm_viewRotation * upW);",
     "  vec3 L = normalize(czm_viewRotation * normalize(upW * 0.75 - eastW * 0.45 - northW * 0.55));",
     "  float diff = max(dot(n, L), 0.0);",
+    "  float sky = 0.5 + 0.5 * dot(n, upE);",
     "  float cat = floor(v_facade.w / 64.0 + 0.001);",
     "  float seed = v_facade.w - cat * 64.0;",
-    "  float r1 = hb(seed + 1.0), r2 = hb(seed + 7.0);",
-    "  if (v_roof.z > 0.5) {",
-    "    vec3 rc = vec3(0.62, 0.62, 0.60) * (0.9 + 0.2 * r1);",
-    "    if (roofOn > 0.5) rc = texture2D(roofImg, clamp(v_roof.xy, 0.0, 1.0)).rgb;",
-    "    m.diffuse = rc * (0.92 + 0.12 * diff);",
+    "  float r1 = hb(seed + 1.0), r2 = hb(seed + 7.0), r3 = hb(seed + 13.0);",
+    "  float H = v_extra.y;",
+    "  if (whiteMode > 0.5) {",
+    "    vec3 wc = vec3(0.94, 0.94, 0.925);",
+    "    float g = v_extra.w > 0.5 ? 1.0 : mix(0.74, 1.0, smoothstep(-0.2, 1.6, v_facade.y));",
+    "    m.diffuse = wc * g * (0.55 + 0.33 * diff + 0.14 * sky);",
     "    return m;",
     "  }",
+    // ---- 지붕: 낮은 건물은 항공사진(가장자리 번짐을 줄이려고 건물 중심 쪽으로 12 % 당겨 읽음), 높은 건물은 사진이 비스듬해 콘크리트 옥상
+    "  if (v_extra.w > 0.5) {",
+    "    vec3 base = mix(vec3(0.56, 0.57, 0.55), vec3(0.70, 0.70, 0.67), r1);",
+    "    vec3 rc = base * (0.9 + 0.2 * vn(v_roof.xy * 900.0));",
+    "    if (roofOn > 0.5 && H < 16.0) {",
+    "      vec3 a = texture2D(roofImg, clamp(mix(v_roof.xy, v_roof.zw, 0.12), 0.0, 1.0)).rgb;",
+    "      rc = mix(a, base, 0.12);",
+    "    }",
+    "    m.diffuse = rc * (0.78 + 0.22 * diff);",
+    "    return m;",
+    "  }",
+    // ---- 벽
     "  float s = v_facade.x, t = v_facade.y, fh = max(v_facade.z, 2.4);",
-    "  float fi = floor(t / fh), ft = fract(t / fh);",
-    // 묶음별 벽 색·창 간격
-    "  vec3 wall; float colW; float winA; float winB; float hA; float hB;",
-    "  if (cat < 0.5) {", // 주택
-    "    wall = pick4(r1, vec3(0.83, 0.76, 0.64), vec3(0.72, 0.55, 0.45), vec3(0.74, 0.73, 0.70), vec3(0.88, 0.85, 0.77));",
-    "    colW = 4.2; winA = 0.32; winB = 0.68; hA = 0.36; hB = 0.78;",
-    "  } else if (cat < 1.5) {", // 아파트
-    "    wall = pick4(r1, vec3(0.90, 0.88, 0.84), vec3(0.87, 0.85, 0.80), vec3(0.92, 0.90, 0.86), vec3(0.85, 0.83, 0.78));",
-    "    colW = 3.0; winA = 0.12; winB = 0.88; hA = 0.30; hB = 0.86;",
-    "  } else if (cat < 2.5) {", // 상가·업무
-    "    wall = pick4(r1, vec3(0.80, 0.80, 0.78), vec3(0.82, 0.76, 0.68), vec3(0.68, 0.50, 0.42), vec3(0.88, 0.87, 0.84));",
-    "    colW = 3.4; winA = 0.10; winB = 0.90; hA = 0.30; hB = 0.80;",
-    "  } else if (cat < 3.5) {", // 공장·창고
-    "    wall = pick4(r1, vec3(0.80, 0.81, 0.80), vec3(0.86, 0.84, 0.77), vec3(0.68, 0.74, 0.69), vec3(0.74, 0.75, 0.76));",
-    "    colW = 6.0; winA = 0.25; winB = 0.75; hA = 0.0; hB = 0.0;",
-    "  } else {", // 공공·교육 등
-    "    wall = pick4(r1, vec3(0.86, 0.84, 0.80), vec3(0.80, 0.78, 0.74), vec3(0.84, 0.80, 0.72), vec3(0.88, 0.88, 0.86));",
-    "    colW = 3.6; winA = 0.15; winB = 0.85; hA = 0.30; hB = 0.82;",
+    "  float segL = max(v_extra.x, 0.5), floors = max(v_extra.z, 1.0);",
+    "  float ws = max(fwidth(s), 0.002), wt = max(fwidth(t), 0.002), aa = max(ws, wt);",
+    "  float fade = clamp(1.8 - aa * 2.2, 0.0, 1.0);", // 화소당 0.8 m보다 성기면 무늬를 흐린다
+    "  float fi = floor(t / fh), ty = fract(t / fh) * fh;",
+    "  float x = s - segL * 0.5;", // 면 가운데 기준
+    "  float stuc = vn(vec2(s, t) * 1.6) * 0.6 + vn(vec2(s, t) * 0.31) * 0.4;",
+    "  vec3 wall; vec3 col; float win = 0.0; vec3 glass = glassCol(ty, fh, 0.6 + 0.4 * hb(floor(s / 2.0) + fi * 7.0 + seed));",
+    "  float frame = 0.0;",
+    "  if (cat < 0.5) {", // ---- 주택: 면마다 창 1~3개(테두리), 몇 면은 1층 문, 벽돌 무늬
+    "    wall = pick4(r1, vec3(0.62, 0.40, 0.32), vec3(0.84, 0.77, 0.65), vec3(0.73, 0.72, 0.69), vec3(0.88, 0.85, 0.77));",
+    "    float nw = max(1.0, floor(segL / 3.6));",
+    "    float p = segL / nw;",
+    "    float u = (fract(s / p) - 0.5) * p;",
+    "    float wd = min(1.4, p * 0.55);",
+    "    win = band(u, -wd * 0.5, wd * 0.5, ws) * band(ty, 0.9, min(2.2, fh - 0.35), wt) * step(2.0, segL);",
+    "    frame = band(u, -wd * 0.5 - 0.08, wd * 0.5 + 0.08, ws) * band(ty, 0.82, min(2.2, fh - 0.35) + 0.08, wt) - win;",
+    "    float door = step(0.55, hb(seed + floor(segL * 10.0))) * band(x, segL * 0.22 - 0.5, segL * 0.22 + 0.5, ws) * band(t, 0.0, 2.1, wt) * step(fi, 0.5) * step(3.0, segL);",
+    "    if (r1 < 0.25) {", // 벽돌
+    "      float row = floor(t / 0.075);",
+    "      float mort = max(1.0 - band(fract(t / 0.075), 0.12, 1.0, wt / 0.075), 1.0 - band(fract((s + mod(row, 2.0) * 0.1) / 0.2), 0.06, 1.0, ws / 0.2));",
+    "      wall = mix(wall * (0.9 + 0.18 * h2(vec2(floor((s + mod(row, 2.0) * 0.1) / 0.2), row))), vec3(0.72, 0.70, 0.66), mort * 0.7 * fade);",
+    "    } else wall *= 0.94 + 0.1 * stuc;",
+    "    col = mix(wall, vec3(0.93, 0.92, 0.88), frame * fade);",
+    "    col = mix(col, glass, win * fade);",
+    "    col = mix(col, vec3(0.30, 0.24, 0.20), door * fade);",
+    "  } else if (cat < 1.5) {", // ---- 아파트: 긴 면은 층마다 발코니 난간 + 통창(세로 창살), 세대 사이 벽, 짧은 면은 막힌 벽 + 작은 창 + 색 띠
+    "    wall = pick4(r1, vec3(0.91, 0.90, 0.86), vec3(0.88, 0.86, 0.81), vec3(0.93, 0.92, 0.89), vec3(0.86, 0.85, 0.82));",
+    "    wall *= 0.96 + 0.06 * stuc;",
+    "    if (segL >= 14.0) {",
+    "      float unitW = 7.0 + 2.0 * r2;",
+    "      float sep = 1.0 - band((fract(s / unitW) - 0.5) * unitW, -unitW * 0.5 + 0.35, unitW * 0.5 - 0.35, ws);",
+    "      float gl = band(ty, 1.0, fh - 0.28, wt) * (1.0 - sep);",
+    "      float mull = 1.0 - band(fract(s / 1.45), 0.04, 0.96, ws / 1.45);",
+    "      win = gl * step(0.5, fi + 0.6 * step(0.5, r3));", // 1층은 반쯤 필로티처럼 비움
+    "      col = mix(wall, glass, win * fade);",
+    "      col = mix(col, vec3(0.80, 0.80, 0.78), win * mull * fade * 0.8);",
+    "      col *= 1.0 - 0.18 * band(ty, 0.0, 0.18, wt) * fade;", // 층 슬래브 그림자 줄
+    "      col *= 1.0 - 0.12 * band(ty, 0.95, 1.05, wt) * fade;", // 난간 윗선
+    "    } else {",
+    "      win = band(x, -0.5, 0.5, ws) * band(ty, 1.0, 2.1, wt);",
+    "      vec3 accent = pick4(r2, vec3(0.30, 0.42, 0.40), vec3(0.50, 0.36, 0.30), vec3(0.32, 0.36, 0.46), vec3(0.55, 0.52, 0.46));",
+    "      float stripe = band(x, segL * 0.18, segL * 0.18 + 1.4, ws) * band(t, H * 0.55, H - 1.2, wt);",
+    "      col = mix(wall, accent, stripe * 0.85);",
+    "      col = mix(col, glass, win * fade);",
+    "    }",
+    "    col *= 1.0 - 0.15 * band(t, H - 0.7, H + 1.0, wt);", // 옥상 난간 줄
+    "  } else if (cat < 2.5) {", // ---- 상가·업무: 1층 유리 진열창 + 간판 띠, 위층은 띠창 또는 창
+    "    wall = pick4(r1, vec3(0.80, 0.80, 0.78), vec3(0.78, 0.72, 0.64), vec3(0.62, 0.46, 0.38), vec3(0.88, 0.87, 0.84));",
+    "    wall *= 0.95 + 0.08 * stuc;",
+    "    if (fi < 0.5) {",
+    "      float shop = band(ty, 0.08, fh - 0.95, wt);",
+    "      float mull = 1.0 - band(fract(s / 2.6), 0.03, 0.97, ws / 2.6);",
+    "      vec3 sign = pick4(r2, vec3(0.20, 0.27, 0.40), vec3(0.45, 0.18, 0.16), vec3(0.16, 0.36, 0.30), vec3(0.34, 0.34, 0.34));",
+    "      float sb = band(ty, fh - 0.9, fh - 0.15, wt);",
+    "      col = mix(wall, glassCol(ty, fh, 0.5), shop * fade);",
+    "      col = mix(col, vec3(0.35, 0.36, 0.37), shop * mull * fade);",
+    "      col = mix(col, sign * (0.9 + 0.2 * hb(floor(s / 6.0) + seed)), sb);",
+    "    } else {",
+    "      if (r3 < 0.5) win = band(ty, 0.9, fh - 0.45, wt) * (1.0 - (1.0 - band(fract(s / 1.6), 0.05, 0.95, ws / 1.6)));",
+    "      else win = rep(s, 2.8, 1.5, ws) * band(ty, 0.9, fh - 0.5, wt);",
+    "      col = mix(wall, glass, win * fade);",
+    "    }",
+    "    col *= 1.0 - 0.12 * band(t, H - 0.5, H + 1.0, wt);",
+    "  } else if (cat < 3.5) {", // ---- 공장·창고: 판넬 골·이음, 아래 콘크리트 띠, 위쪽 띠창, 긴 면에 셔터 문
+    "    wall = pick4(r1, vec3(0.80, 0.81, 0.80), vec3(0.86, 0.84, 0.77), vec3(0.66, 0.72, 0.67), vec3(0.72, 0.74, 0.76));",
+    "    float rib = band(fract(s / 0.3), 0.0, 0.5, ws / 0.3);",
+    "    wall *= 1.0 - 0.06 * rib * fade;",
+    "    wall *= 1.0 - 0.08 * (1.0 - band(fract(t / 1.0), 0.03, 0.97, wt)) * fade;",
+    "    col = mix(wall, vec3(0.58, 0.58, 0.56) * (0.9 + 0.15 * stuc), band(t, -2.0, 1.1, wt));",
+    "    win = rep(s, 4.0, 3.0, ws) * band(t, H - 2.1, H - 1.2, wt) * step(4.0, H);",
+    "    col = mix(col, glassCol(0.5, 1.0, 0.7), win * fade);",
+    "    float sh = step(12.0, segL) * step(0.45, r3) * band(x, -2.2, 2.2, ws) * band(t, 0.0, min(4.2, H - 1.0), wt);",
+    "    col = mix(col, vec3(0.55, 0.57, 0.58) * (1.0 - 0.15 * (1.0 - band(fract(t / 0.12), 0.1, 1.0, wt / 0.12))), sh * fade + sh * (1.0 - fade) * 0.6);",
+    "  } else {", // ---- 공공·교육 등: 큰 창 줄, 처마 띠
+    "    wall = pick4(r1, vec3(0.86, 0.84, 0.80), vec3(0.80, 0.78, 0.74), vec3(0.78, 0.66, 0.56), vec3(0.88, 0.88, 0.86));",
+    "    wall *= 0.95 + 0.08 * stuc;",
+    "    win = rep(s, 3.6, 2.2, ws) * band(ty, 0.85, fh - 0.55, wt);",
+    "    col = mix(wall, glass, win * fade);",
+    "    col *= 1.0 - 0.15 * band(t, H - 0.6, H + 1.0, wt);",
     "  }",
-    "  float fc = fract((s + r2 * colW) / colW);",
-    "  float fade = clamp(1.6 - max(fwidth(s / colW), fwidth(t / fh)) * 5.0, 0.0, 1.0);",
-    "  vec3 glass = mix(vec3(0.25, 0.30, 0.35), vec3(0.52, 0.58, 0.64), ft * 0.6 + 0.2 * r2);",
-    "  float win = 0.0;",
-    "  if (cat > 2.5 && cat < 3.5) {", // 공장: 세로 판넬 골 + 꼭대기 근처 띠창
-    "    wall *= 0.96 + 0.04 * step(0.5, fract(s / 0.9));",
-    "    win = box(fc, winA, winB) * box(t, 2.6, 3.4) * step(4.5, fh);",
-    "  } else if (cat > 1.5 && cat < 2.5 && fi < 0.5) {", // 상가 1층: 유리 진열창
-    "    win = box(fract(s / 4.0), 0.05, 0.95) * box(ft, 0.08, 0.86);",
-    "    glass = mix(vec3(0.20, 0.24, 0.27), vec3(0.45, 0.50, 0.54), ft);",
-    "  } else {",
-    "    win = box(fc, winA, winB) * box(ft, hA, hB);",
-    "  }",
-    "  win *= step(0.0, t);",
-    "  vec3 col = mix(wall, glass, win * fade);",
-    "  col = mix(col, wall * 0.9, (1.0 - fade) * 0.35);", // 멀리서는 창이 흐려지되 조금 어둡게
-    "  if (cat > 0.5 && cat < 1.5) col *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.05, ft)) * fade;", // 아파트 층 슬래브 줄
-    "  col *= mix(0.78, 1.0, smoothstep(0.0, 0.5, t));", // 바닥 근처 조금 어둡게
-    "  m.diffuse = col * (0.56 + 0.44 * diff);",
+    "  col = mix(col, col * 0.86, (1.0 - fade) * 0.3);", // 멀리서는 무늬 대신 조금 어둡게
+    "  col *= mix(0.70, 1.0, smoothstep(-0.2, 1.4, t));", // 바닥에 닿는 곳 어둡게 (접지감)
+    "  m.diffuse = col * (0.50 + 0.40 * diff + 0.14 * sky);",
     "  return m;",
     "}",
   ].join("\n");
@@ -119,17 +197,20 @@
     "attribute vec3 position3DLow;",
     "attribute vec3 normal;",
     "attribute vec4 facade;",
-    "attribute vec3 roof;",
+    "attribute vec4 extra;",
+    "attribute vec4 roof;",
     "attribute float batchId;",
     "varying vec3 v_positionEC;",
     "varying vec3 v_normalEC;",
     "varying vec4 v_facade;",
-    "varying vec3 v_roof;",
+    "varying vec4 v_extra;",
+    "varying vec4 v_roof;",
     "void main() {",
     "  vec4 p = czm_computePosition();",
     "  v_positionEC = (czm_modelViewRelativeToEye * p).xyz;",
     "  v_normalEC = czm_normal * normal;",
     "  v_facade = facade;",
+    "  v_extra = extra;",
     "  v_roof = roof;",
     "  gl_Position = czm_modelViewProjectionRelativeToEye * p;",
     "}",
@@ -308,6 +389,7 @@
     var pos = [],
       nor = [],
       fac = [],
+      ext = [],
       rof = [],
       idx = [];
     var vcount = 0;
@@ -318,24 +400,34 @@
       nrm = new C.Cartesian3();
     var wE = roof ? roof.east - roof.west : 1,
       wM = roof ? roof.mN - roof.mS : 1;
-    function push(c, n, s, t, fh, code, rs, rt, isRoof) {
+    function rst(lon, lat) {
+      return roof ? [(lon - roof.west) / wE, (merc(lat) - roof.mS) / wM] : [0, 0];
+    }
+    function push(c, n, f0, f1, f2, f3, e0, e1, e2, e3, r0, r1, r2, r3) {
       pos.push(c.x, c.y, c.z);
       nor.push(n.x, n.y, n.z);
-      fac.push(s, t, fh, code);
-      rof.push(rs, rt, isRoof);
+      fac.push(f0, f1, f2, f3);
+      ext.push(e0, e1, e2, e3);
+      rof.push(r0, r1, r2, r3);
       return vcount++;
+    }
+    function clean(ring) {
+      var pts = ring.slice();
+      if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+      return pts;
     }
     list.forEach(function (b) {
       var base = b.base - SINK,
-        top = b.base + b.shape.h;
+        top = b.base + b.shape.h,
+        H = b.shape.h,
+        fh = b.shape.fh,
+        fl = b.shape.floors;
       var code = b.shape.cat * 64 + b.seed;
       b.polys.forEach(function (poly) {
-        // 벽: 모든 고리 (구멍 포함)
+        // 벽: 모든 고리 (구멍 포함). 면마다 s = 면 시작부터 거리
         poly.forEach(function (ring) {
-          var pts = ring.slice();
-          if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+          var pts = clean(ring);
           if (pts.length < 3) return;
-          var cum = 0;
           for (var i = 0; i < pts.length; i++) {
             var p = pts[i],
               q = pts[(i + 1) % pts.length];
@@ -350,12 +442,11 @@
             C.Cartesian3.cross(tmpA, up, nrm);
             if (C.Cartesian3.magnitude(nrm) < 1e-9) continue;
             C.Cartesian3.normalize(nrm, nrm);
-            var a = push(pb, nrm, cum, -SINK, b.shape.fh, code, -1, -1, 0),
-              bq = push(qb, nrm, cum + len, -SINK, b.shape.fh, code, -1, -1, 0),
-              c = push(qt, nrm, cum + len, b.shape.h, b.shape.fh, code, -1, -1, 0),
-              d = push(pt, nrm, cum, b.shape.h, b.shape.fh, code, -1, -1, 0);
+            var a = push(pb, nrm, 0, -SINK, fh, code, len, H, fl, 0, -1, -1, -1, -1),
+              bq = push(qb, nrm, len, -SINK, fh, code, len, H, fl, 0, -1, -1, -1, -1),
+              c = push(qt, nrm, len, H, fh, code, len, H, fl, 0, -1, -1, -1, -1),
+              d = push(pt, nrm, 0, H, fh, code, len, H, fl, 0, -1, -1, -1, -1);
             idx.push(a, bq, c, a, c, d);
-            cum += len;
           }
         });
         // 지붕: 바깥 고리 + 구멍을 삼각형으로
@@ -363,8 +454,7 @@
           holes = [],
           ll = [];
         poly.forEach(function (ring, ri) {
-          var pts = ring.slice();
-          if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+          var pts = clean(ring);
           if (ri > 0) holes.push(flat.length);
           pts.forEach(function (p) {
             flat.push(new C.Cartesian2(p[0] * b.kx, p[1] * 110540));
@@ -379,23 +469,27 @@
           return;
         }
         var upN = C.Cartesian3.normalize(C.Cartesian3.fromDegrees(ll[0][0], ll[0][1], top, C.Ellipsoid.WGS84, tmpB), new C.Cartesian3());
+        var cst = rst(C.Math.toDegrees(b.c.longitude), C.Math.toDegrees(b.c.latitude));
         var start = vcount;
         ll.forEach(function (p) {
-          var rs = roof ? (p[0] - roof.west) / wE : 0,
-            rt = roof ? (merc(p[1]) - roof.mS) / wM : 0;
-          push(C.Cartesian3.fromDegrees(p[0], p[1], top), upN, 0, b.shape.h, b.shape.fh, code, rs, rt, 1);
+          var r = rst(p[0], p[1]);
+          push(C.Cartesian3.fromDegrees(p[0], p[1], top), upN, 0, H, fh, code, 0, H, fl, 1, r[0], r[1], cst[0], cst[1]);
         });
         for (var k = 0; k < tri.length; k++) idx.push(start + tri[k]);
       });
     });
     if (!idx.length) return null;
     var positions = new Float64Array(pos);
+    function f(vals, n) {
+      return new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: n, values: new Float32Array(vals) });
+    }
     return new Cesium.Geometry({
       attributes: {
         position: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.DOUBLE, componentsPerAttribute: 3, values: positions }),
-        normal: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: 3, values: new Float32Array(nor) }),
-        facade: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: 4, values: new Float32Array(fac) }),
-        roof: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: 3, values: new Float32Array(rof) }),
+        normal: f(nor, 3),
+        facade: f(fac, 4),
+        extra: f(ext, 4),
+        roof: f(rof, 4),
       },
       indices: Cesium.IndexDatatype.createTypedArray(vcount, idx),
       primitiveType: Cesium.PrimitiveType.TRIANGLES,
@@ -411,6 +505,7 @@
     var queue = [];
     var running = 0;
     var stats = { buildings: 0, skippedNew: 0, tiles: 0, failed: 0 };
+    var style = opts.style === "white" ? "white" : "real"; // "real" 실사화 | "white" 흰색 모형
     var failures = 0;
 
     function state(msg) {
@@ -422,7 +517,7 @@
         translucent: false,
         fabric: {
           type: "HnBuilding" + Math.random().toString(36).slice(2, 8),
-          uniforms: { roofImg: roof ? roof.canvas : Cesium.Material.DefaultImageId, roofOn: roof ? 1 : 0 },
+          uniforms: { roofImg: roof ? roof.canvas : Cesium.Material.DefaultImageId, roofOn: roof ? 1 : 0, whiteMode: style === "white" ? 1 : 0 },
           source: MAT_SRC,
         },
       });
@@ -519,6 +614,7 @@
             compressVertices: false,
             releaseGeometryInstances: true,
             allowPicking: false,
+            shadows: Cesium.ShadowMode.ENABLED,
             show: active,
           });
           viewer.scene.primitives.add(prim);
@@ -606,6 +702,15 @@
       pump();
     }
 
+    function setStyle(st) {
+      style = st === "white" ? "white" : "real";
+      Object.keys(tiles).forEach(function (id) {
+        var T = tiles[id];
+        if (T.prim && T.prim.appearance && T.prim.appearance.material) T.prim.appearance.material.uniforms.whiteMode = style === "white" ? 1 : 0;
+      });
+      viewer.scene.requestRender();
+    }
+
     function setActive(on) {
       active = on;
       Object.keys(tiles).forEach(function (id) {
@@ -661,7 +766,7 @@
       } catch (e) {}
     });
 
-    return { setActive: setActive, update: update, nearest: nearest, stats: stats, tiles: tiles };
+    return { setActive: setActive, setStyle: setStyle, update: update, nearest: nearest, stats: stats, tiles: tiles };
   }
 
   window.HnBuildings = { create: create, _shape: shapeOf };

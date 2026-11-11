@@ -371,6 +371,15 @@ a {
   accent-color: var(--navy);
 }
 
+.seg-sm button {
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.seg-sm button:disabled {
+  color: var(--muted);
+}
+
 .v3-pick {
   font-size: 13.5px;
   border: 1px solid var(--line-strong);

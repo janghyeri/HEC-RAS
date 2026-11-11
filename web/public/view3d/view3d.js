@@ -35,6 +35,13 @@
     admin: null, // 행정구역 경계·이름 (CustomDataSource)
     bldStyle: null,
     t0: performance.now(),
+    bstyle: (function () {
+      try {
+        return localStorage.getItem("hinnamno.bldStyle") === "white" ? "white" : "real";
+      } catch (e) {
+        return "real";
+      }
+    })(),
     ready: false,
   };
 
@@ -163,7 +170,9 @@
           updateRoofs();
         } catch (e) {}
       });
+      enhanceScene();
       initOwnBuildings();
+      setBuildingStyle(S.bstyle);
       setBuildings($("bld").checked);
       setNames($("names").checked);
       setAdmin($("adm").checked);
@@ -410,7 +419,7 @@
           })
         );
         sh.setUniform("u_roofRect", new Cesium.Cartesian4(lon(x0), lon(x0 + ROOF_N), merc(y0 + ROOF_N), merc(y0)));
-        sh.setUniform("u_roofOn", 1);
+        sh.setUniform("u_roofOn", S.bstyle === "white" ? 0 : 1);
         S.viewer.scene.requestRender();
       } catch (e) {
         console.warn("[3D] 지붕 사진을 넣지 못함", e);
@@ -436,6 +445,7 @@
     try {
       S.bld = window.HnBuildings.create(S.viewer, {
         key: C.vworldKey,
+        style: S.bstyle,
         onState: function (msg, st) {
           $("bldnote").textContent = (st.buildings > 0 ? "건물 " + st.buildings.toLocaleString("ko-KR") + "동" : "") + (msg ? (st.buildings > 0 ? " · " : "") + msg : "");
         },
@@ -456,6 +466,62 @@
     $("bldnote").textContent = note || "";
     setBuildings($("bld").checked);
   }
+  // 건물 표현: 실사화(지붕 항공사진·용도별 벽) / 흰색 모형. 브이월드 상자로 돌아간 경우에는 흰색 상자 + (실사화면) 지붕 사진
+  function setBuildingStyle(st) {
+    S.bstyle = st === "white" ? "white" : "real";
+    try {
+      localStorage.setItem("hinnamno.bldStyle", S.bstyle);
+    } catch (e) {}
+    if (ownBuildings()) S.bld.setStyle(S.bstyle);
+    else if (S.bldShader) {
+      try {
+        S.bldShader.setUniform("u_roofOn", S.bstyle === "white" ? 0 : S.roof && !S.roof.loading ? 1 : 0);
+      } catch (e) {}
+    }
+    document.querySelectorAll("[data-bstyle]").forEach(function (b) {
+      b.setAttribute("aria-checked", String(b.getAttribute("data-bstyle") === S.bstyle));
+    });
+    if (S.viewer) S.viewer.scene.requestRender();
+  }
+
+  // 장면 품질: 건물 명암과 같은 남서쪽 빛, 그림자(휴대폰 제외), 가까이 볼 때 선명한 항공사진(브이월드 WMTS z19)
+  function enhanceScene() {
+    var v = S.viewer,
+      sc = v.scene;
+    try {
+      var b = (S.tiles && S.tiles.bounds) || [129.3, 35.85, 129.5, 36.1];
+      var c0 = Cesium.Cartesian3.fromDegrees((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+      var enu = Cesium.Transforms.eastNorthUpToFixedFrame(c0);
+      var E = Cesium.Matrix4.getColumn(enu, 0, new Cesium.Cartesian4()),
+        N = Cesium.Matrix4.getColumn(enu, 1, new Cesium.Cartesian4()),
+        U = Cesium.Matrix4.getColumn(enu, 2, new Cesium.Cartesian4());
+      var toL = new Cesium.Cartesian3(U.x * 0.75 - E.x * 0.45 - N.x * 0.55, U.y * 0.75 - E.y * 0.45 - N.y * 0.55, U.z * 0.75 - E.z * 0.45 - N.z * 0.55);
+      Cesium.Cartesian3.normalize(toL, toL);
+      sc.light = new Cesium.DirectionalLight({ direction: Cesium.Cartesian3.negate(toL, new Cesium.Cartesian3()), intensity: 2.0 });
+      if (!window.matchMedia("(max-width: 767px)").matches) {
+        v.shadows = true;
+        v.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY;
+        sc.shadowMap.softShadows = true;
+        sc.shadowMap.size = 2048;
+        sc.shadowMap.darkness = 0.45;
+        sc.shadowMap.maximumDistance = 1500;
+      }
+      if (C.vworldKey && !S.hiLayer) {
+        var p = new Cesium.UrlTemplateImageryProvider({
+          url: "https://api.vworld.kr/req/wmts/1.0.0/" + encodeURIComponent(C.vworldKey) + "/Satellite/{z}/{y}/{x}.jpeg",
+          tilingScheme: new Cesium.WebMercatorTilingScheme(),
+          minimumLevel: 14,
+          maximumLevel: 19,
+          rectangle: Cesium.Rectangle.fromDegrees(b[0] - 0.03, b[1] - 0.03, b[2] + 0.03, b[3] + 0.03),
+          credit: "브이월드 항공사진",
+        });
+        S.hiLayer = v.imageryLayers.addImageryProvider(p, Math.min(2, v.imageryLayers.length));
+      }
+    } catch (e) {
+      console.warn("[3D] 장면 품질 설정 일부 실패", e);
+    }
+  }
+
   function setBuildings(on, tries) {
     if (ownBuildings()) {
       vwShow("facility_build", false);
@@ -572,6 +638,9 @@
       dropBuildingShader();
       S.bldShader = null;
       dropOwnBuildings("건물 그리기 오류로 브이월드 상자 건물로 보여 줍니다.");
+      try {
+        S.viewer.shadows = false;
+      } catch (e) {}
       setTimeout(function () {
         try {
           S.viewer.useDefaultRenderLoop = true;
@@ -1491,6 +1560,11 @@
     });
     $("names").addEventListener("change", function (e) {
       setNames(e.target.checked);
+    });
+    document.querySelectorAll("[data-bstyle]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        setBuildingStyle(b.getAttribute("data-bstyle"));
+      });
     });
     $("bld").addEventListener("change", function (e) {
       setBuildings(e.target.checked);
