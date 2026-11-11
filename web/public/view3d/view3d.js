@@ -235,8 +235,31 @@
   // ------------------------------------------------------------ 브이월드 레이어: 건물·이름·행정경계
   // 건물: facility_build(사진 입힌 LoD4)와 facility_build_lod1(건물 바닥 모양을 높이 자료 BLDH_HT만큼 올린 상자)이
   // 겹쳐 떠서 색이 섞였고, LoD1은 건물 구분(BULD_SE)별로 파란 계열·노랑·분홍으로 칠해져 침수심 색과 헷갈렸다 (2026-11-11)
-  // → LoD1만 쓰고 한 가지 중립색으로 칠한다. 레이어가 늦게 생기면 몇 번 다시 시도
+  // → LoD1만 쓰고 한 가지 중립색으로 칠한다. 레이어가 늦게 생기면 몇 번 다시 시도.
+  // LoD1 모형은 재질이 반투명(alphaMode BLEND)이고 법선이 없어 건물이 비쳐 겹쳐 보이고 면 구분이 안 됐다 (사용자 지적 11/11)
+  // → 직접 쓴 셰이더로 불투명하게 그리고, 화면 미분으로 면 방향을 구해 남서쪽 빛으로 벽·지붕 명암을 준다.
+  //   건물마다 밝기를 ±4 % 달리해 붙은 건물도 구별되게. 셰이더를 쓸 수 없거나 오류가 나면 단색으로 돌아간다
   var BLD_COLOR = "#d6d0c4";
+  var BLD_FS = [
+    "void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {",
+    "  vec3 pEC = fsInput.attributes.positionEC;",
+    "  vec3 n = normalize(cross(dFdx(pEC), dFdy(pEC)));",
+    "  if (dot(n, -pEC) < 0.0) n = -n;",
+    "  vec3 upW = normalize((czm_inverseView * vec4(pEC, 1.0)).xyz);",
+    "  vec3 eastW = normalize(cross(vec3(0.0, 0.0, 1.0), upW));",
+    "  vec3 northW = cross(upW, eastW);",
+    "  vec3 upEC = normalize(czm_viewRotation * upW);",
+    "  vec3 L = normalize(czm_viewRotation * normalize(upW * 0.75 - eastW * 0.45 - northW * 0.55));",
+    "  float diff = max(dot(n, L), 0.0);",
+    "  float roof = smoothstep(0.55, 0.85, dot(n, upEC));",
+    "  float id = float(fsInput.featureIds.featureId_0);",
+    "  float tint = fract(sin(id * 12.9898) * 43758.5453) * 0.08 - 0.04;",
+    "  vec3 base = vec3(0.80, 0.77, 0.72) * (1.0 + tint);",
+    "  vec3 wall = base * (0.55 + 0.45 * diff);",
+    "  material.diffuse = mix(wall, base * 1.1, roof);",
+    "  material.alpha = 1.0;",
+    "}",
+  ].join("\n");
   function vwEl(id) {
     try {
       return (S.map && (S.map.getElementById(id) || S.map.getLayerElement(id))) || null;
@@ -255,6 +278,22 @@
       return false;
     }
   }
+  function buildingShader() {
+    if (S.bldShader === undefined) {
+      S.bldShader = null;
+      try {
+        if (Cesium.CustomShader && Cesium.CustomShaderTranslucencyMode && S.viewer.scene.context.standardDerivatives)
+          S.bldShader = new Cesium.CustomShader({
+            lightingModel: Cesium.LightingModel.UNLIT,
+            translucencyMode: Cesium.CustomShaderTranslucencyMode.OPAQUE,
+            fragmentShaderText: BLD_FS,
+          });
+      } catch (e) {
+        S.bldShader = null;
+      }
+    }
+    return S.bldShader;
+  }
   function styleBuildings() {
     var ts = S.bldTs;
     if (!ts || (ts.isDestroyed && ts.isDestroyed())) {
@@ -262,9 +301,24 @@
       ts = S.bldTs = (el && el._tileset) || null;
     }
     if (!ts) return false;
-    if (!S.bldStyle) S.bldStyle = new Cesium.Cesium3DTileStyle({ color: "color('" + BLD_COLOR + "')" });
+    var sh = buildingShader();
+    if (!S.bldStyle) S.bldStyle = new Cesium.Cesium3DTileStyle({ color: sh ? "color('white')" : "color('" + BLD_COLOR + "')" });
     if (ts.style !== S.bldStyle) ts.style = S.bldStyle;
+    if (sh && ts.customShader !== sh) ts.customShader = sh;
+    if (!ts.__hnSse) {
+      ts.__hnSse = true;
+      ts.maximumScreenSpaceError = Math.min(ts.maximumScreenSpaceError || 16, 12); // 가까운 건물을 조금 더 촘촘히
+    }
     return true;
+  }
+  function dropBuildingShader() {
+    if (!S.bldShader) return;
+    S.bldShader = null;
+    S.bldStyle = new Cesium.Cesium3DTileStyle({ color: "color('" + BLD_COLOR + "')" });
+    if (S.bldTs) {
+      S.bldTs.customShader = undefined;
+      S.bldTs.style = S.bldStyle;
+    }
   }
   function setBuildings(on, tries) {
     vwShow("facility_build", false);
@@ -361,9 +415,11 @@
   // 그리기 오류(셰이더 등)가 나면 Cesium이 화면 갱신을 멈춘다 → 이 화면이 더한 물 표면·흐름을 걷어내고 다시 그린다
   function guardRender() {
     S.viewer.scene.renderError.addEventListener(function (scene, err) {
-      console.warn("[3D] 그리기 오류 — 물결·흐름 표현을 끄고 다시 그림", err);
+      console.warn("[3D] 그리기 오류 — 물결·건물 셰이더를 끄고 다시 그림", err);
       dropWater();
       S.water = false;
+      dropBuildingShader();
+      S.bldShader = null;
       setTimeout(function () {
         try {
           S.viewer.useDefaultRenderLoop = true;
