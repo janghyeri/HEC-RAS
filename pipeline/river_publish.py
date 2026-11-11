@@ -126,9 +126,18 @@ def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbo
 
     (dst / "river.json").write_text(json.dumps(river_json(rv, scenario), ensure_ascii=False, separators=(",", ":")),
                                     encoding="utf-8")
+    flow = None
+    try:                                   # 흐름 표시용 단면 평균 유속 (pipeline/river_flow.py)
+        from .river_flow import write as write_flow
+
+        flow = write_flow(dump / f"river_{scenario}.npz", dst / "river_flow.json", scenario)
+    except Exception as e:  # 흐름 표시가 없어도 지도는 쓸 수 있다
+        flow = {"ok": False, "error": f"{type(e).__name__}: {e}"}
     meta_p = dst / "meta.json"
     meta = json.loads(meta_p.read_text(encoding="utf-8"))
     meta["files"]["river.json"] = "냉천 1D 단면 위치·하상·제방 높이·최대 수위 (지도에서 하천을 누를 때)"
+    if (dst / "river_flow.json").exists():
+        meta["files"]["river_flow.json"] = "냉천 흐름 표시용 중심선·단면 평균 유속·수면 폭 (10분 간격, pipeline/river_flow.py)"
     meta["files"]["tiles/"] = (f"최대 수심 등급 PNG 타일 z{zmin}–{zmax} (XYZ) — 2D 셀 수심 + 하천(1D) 구간 수면, "
                                "설명은 tiles/tiles.json")
     meta["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -148,7 +157,7 @@ def publish_river(dst: Path, depth_cm: Path, dump: Path, scenario: str, mesh_bbo
             "area_tiles_km2": round(tiles["area_m2_zmax"] / 1e6, 4),
             "river_depth_p50_p99_max_m": [round(float(np.nanpercentile(river, 50)), 2),
                                           round(float(np.nanpercentile(river, 99)), 2), round(float(np.nanmax(river)), 2)],
-            "generated_at": meta["generated_at"]}
+            "generated_at": meta["generated_at"], "flow": flow}
 
 
 def add_river_to_job(job_dir: Path, hdf: Path, terrain_tif: Path, model_version: str, scenario: str) -> dict:

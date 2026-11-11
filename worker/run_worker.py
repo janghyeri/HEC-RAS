@@ -31,7 +31,7 @@ from worker.supabase_rest import Supabase, SupabaseError, _ctype, load_env  # no
 
 BUCKET = "results"
 UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json",
-                "river.json")
+                "river.json", "river_flow.json")
 LOG_KEEP = 8000           # DB에 남기는 로그 글자 수 (끝부분)
 
 

@@ -26,6 +26,7 @@
     frameLayer: null,
     swap: 0,
     images: {},
+    flow: null, // 하천 흐름 표시 {model, ps, lines}
     ready: false,
   };
 
@@ -149,6 +150,7 @@
       status("");
       setupPick();
       setBuildings($("bld").checked);
+      ensureFlowLines();
       applyScenario();
       // 처음 비스듬한 시점으로. 브이월드가 초기화 뒤 카메라를 자기 처음 위치(우주·수직 시점 등)로 옮기는 일이 있어,
       // 사용자가 지도를 만지기 전까지 2.5초마다 확인해 목표(높이 약 2.2 km)에서 멀면 다시 보낸다 (최대 20초)
@@ -342,11 +344,15 @@
       getJSON(fileUrl(item, "kpi.json")).catch(function () {
         return null;
       }),
+      getJSON(fileUrl(item, "river_flow.json")).catch(function () {
+        return null;
+      }),
     ]).then(function (r) {
       if (S.cur !== item) return;
       S.tiles = r[0];
       S.frames = r[1];
       S.kpi = r[2];
+      setFlowData(r[3]);
       if (!S.frames && S.mode === "time") S.mode = "max";
       if (S.frames) S.frame = Math.min(S.frame, S.frames.count - 1);
       renderControls();
@@ -357,6 +363,7 @@
   function setMode(m) {
     if (m === "time" && !S.frames) return;
     S.mode = m;
+    if (S.viewer) S.viewer.scene.requestRender();
     if (m === "max") stop();
     if (S.maxLayer) S.maxLayer.show = m === "max";
     if (m === "max") clearFrame();
@@ -446,6 +453,154 @@
       })
       .join("");
     sel.value = S.cur ? S.cur.id : "";
+  }
+
+
+  // ------------------------------------------------------------ 하천 흐름 표시 (web/lib/riverFlow.ts와 같은 계산 — 바꾸면 둘 다)
+  // 시간대별로 볼 때, 멈춰 있어도 냉천 중심선을 따라 흰 줄이 그 시각 단면 평균 유속의 SPEEDUP배로 흐른다.
+  var SPEEDUP = 100;
+  var N_FLOW = 300;
+
+  function lowerBound(a, v) {
+    var lo = 0,
+      hi = a.length - 1;
+    while (lo < hi) {
+      var m = (lo + hi) >> 1;
+      if (a[m] < v) lo = m + 1;
+      else hi = m;
+    }
+    return lo;
+  }
+
+  function FlowModel(d) {
+    var lat0 = d.centerline.reduce(function (a, p) {
+      return a + p[1];
+    }, 0) / d.centerline.length;
+    this.d = d;
+    this.kx = 111320 * Math.cos((lat0 * Math.PI) / 180);
+    this.ky = 110540;
+    this.x = [];
+    this.y = [];
+    this.cum = [];
+    var c = 0,
+      self = this;
+    d.centerline.forEach(function (p, i) {
+      var x = p[0] * self.kx,
+        y = p[1] * self.ky;
+      if (i) c += Math.hypot(x - self.x[i - 1], y - self.y[i - 1]);
+      self.x.push(x);
+      self.y.push(y);
+      self.cum.push(c);
+    });
+    this.length = c;
+    this.scale = d.length_m > 0 ? d.length_m / c : 1;
+  }
+  FlowModel.prototype.at = function (s) {
+    var i = Math.max(1, Math.min(this.cum.length - 1, lowerBound(this.cum, s)));
+    var L = this.cum[i] - this.cum[i - 1] || 1;
+    var f = Math.max(0, Math.min(1, (s - this.cum[i - 1]) / L));
+    var dx = this.x[i] - this.x[i - 1],
+      dy = this.y[i] - this.y[i - 1];
+    var n = Math.hypot(dx, dy) || 1;
+    return { x: this.x[i - 1] + dx * f, y: this.y[i - 1] + dy * f, tx: dx / n, ty: dy / n };
+  };
+  FlowModel.prototype.interp = function (table, s, t) {
+    var row = table[Math.max(0, Math.min(table.length - 1, t))];
+    var ch = this.d.xs.chainage_m;
+    var c = s * this.scale;
+    var i = Math.max(1, Math.min(ch.length - 1, lowerBound(ch, c)));
+    var L = ch[i] - ch[i - 1];
+    var f = L > 0 ? Math.max(0, Math.min(1, (c - ch[i - 1]) / L)) : 0;
+    return row[i - 1] * (1 - f) + row[i] * f;
+  };
+  FlowModel.prototype.lonLat = function (s, off) {
+    var p = this.at(s);
+    return [(p.x - p.ty * off) / this.kx, (p.y + p.tx * off) / this.ky];
+  };
+
+  function spawn(m) {
+    var life = 3 + Math.random() * 4;
+    return { s: Math.random() * m.length, lane: (Math.random() * 2 - 1) * 0.85, age: Math.random() * life, life: life, h: null };
+  }
+
+  function setFlowData(d) {
+    var lines = S.flow && S.flow.lines;
+    if (!d) {
+      if (lines) lines.show = false;
+      S.flow = lines ? { lines: lines } : null;
+      return;
+    }
+    var m = new FlowModel(d);
+    var ps = [];
+    for (var i = 0; i < N_FLOW; i++) ps.push(spawn(m));
+    S.flow = { model: m, ps: ps, lines: lines || null, rr: 0 };
+    if (S.viewer) ensureFlowLines();
+  }
+
+  function ensureFlowLines() {
+    if (!S.flow || !S.viewer || S.flow.lines) return;
+    var col = new Cesium.PolylineCollection();
+    for (var i = 0; i < N_FLOW; i++) {
+      col.add({
+        positions: [Cesium.Cartesian3.fromDegrees(0, 0, 0), Cesium.Cartesian3.fromDegrees(0, 0, 1)],
+        width: 2,
+        show: false,
+        material: Cesium.Material.fromType("Color", { color: new Cesium.Color(1, 1, 1, 0.85) }),
+      });
+    }
+    S.viewer.scene.primitives.add(col);
+    S.flow.lines = col;
+    var last = performance.now();
+    S.viewer.scene.preRender.addEventListener(function () {
+      var now = performance.now();
+      var dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      updateFlow(dt);
+    });
+  }
+
+  function updateFlow(dt) {
+    var F = S.flow;
+    if (!F || !F.lines) return;
+    var on = S.mode === "time" && !!S.frames && !!F.model && $("flow").checked;
+    F.lines.show = on;
+    if (!on) return;
+    S.viewer.scene.requestRender(); // 화면이 바뀔 때만 그리는 설정이어도 흐름이 보이는 동안은 계속 그린다
+    var m = F.model,
+      t = S.frame,
+      globe = S.viewer.scene.globe;
+    var d = m.d;
+    // 지형 높이는 한 번에 몇 개씩만 다시 구한다 (getHeight는 무거움)
+    for (var k = 0; k < 30; k++) {
+      var q = F.ps[F.rr++ % F.ps.length];
+      var ll = m.lonLat(q.s, 0);
+      var h = globe.getHeight(Cesium.Cartographic.fromDegrees(ll[0], ll[1]));
+      if (h !== undefined) q.h = h;
+    }
+    for (var i = 0; i < F.ps.length; i++) {
+      var p = F.ps[i];
+      var v = m.interp(d.velocity_ms, p.s, t);
+      p.s += v * dt * SPEEDUP;
+      p.age += dt;
+      if (p.age > p.life || p.s > m.length || p.s < 0) {
+        F.ps[i] = p = spawn(m);
+        v = m.interp(d.velocity_ms, p.s, t);
+      }
+      var line = F.lines.get(i);
+      var half = m.interp(d.top_width_m, p.s, t) / 2;
+      if (!(v > 0.05) || !(half > 1) || p.h === null) {
+        line.show = false;
+        continue;
+      }
+      var off = p.lane * half;
+      var len = Math.max(12, Math.min(140, v * SPEEDUP * 0.22));
+      var a = m.lonLat(Math.max(0, p.s - len), off),
+        b = m.lonLat(p.s, off);
+      line.positions = [Cesium.Cartesian3.fromDegrees(a[0], a[1], p.h + 3), Cesium.Cartesian3.fromDegrees(b[0], b[1], p.h + 3)];
+      var kk = p.age / p.life;
+      line.material.uniforms.color.alpha = 0.9 * Math.min(1, kk * 4, (1 - kk) * 4) * Math.min(1, 0.35 + v / 4);
+      line.show = true;
+    }
   }
 
   // ------------------------------------------------------------ 누른 자리 침수심 등급 (이미지 색으로)
@@ -565,6 +720,9 @@
       b.addEventListener("click", function () {
         view(b.getAttribute("data-view"));
       });
+    });
+    $("flow").addEventListener("change", function () {
+      if (S.viewer) S.viewer.scene.requestRender();
     });
     $("bld").addEventListener("change", function (e) {
       setBuildings(e.target.checked);

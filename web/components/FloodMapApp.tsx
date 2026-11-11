@@ -12,6 +12,7 @@ import AboutDialog, { SAFETY_GUIDE_URL } from "./AboutDialog";
 import TopBar from "./TopBar";
 import { CellIndex } from "@/lib/cells";
 import { loadRiver, riverAt, type RiverData } from "@/lib/river";
+import { FlowModel, FlowParticles, SPEEDUP, loadRiverFlow } from "@/lib/riverFlow";
 import {
   OSC_MIN_COUNT,
   baseOf,
@@ -108,6 +109,9 @@ export default function FloodMapApp() {
   const [frameIdx, setFrameIdx] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const preloaded = useRef<string>("");
+  // 하천 흐름 표시 (시간대별로 볼 때, 멈춰 있어도 흐름)
+  const [particles, setParticles] = useState<FlowParticles | null>(null);
+  const [showFlow, setShowFlow] = useState(true);
 
   // 비교용 실제 침수흔적 (있을 때만)
   useEffect(() => {
@@ -177,6 +181,19 @@ export default function FloodMapApp() {
     let stale = false;
     loadFramesInfo(active.ref).then((f) => {
       if (!stale) setFramesInfo(f);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [active]);
+
+  // 하천 흐름 자료 (river_flow.json — 없으면 흐름 표시 없음)
+  useEffect(() => {
+    setParticles(null);
+    if (!active) return;
+    let stale = false;
+    loadRiverFlow(active.ref).then((d) => {
+      if (!stale && d) setParticles(new FlowParticles(new FlowModel(d)));
     });
     return () => {
       stale = true;
@@ -380,6 +397,7 @@ export default function FloodMapApp() {
             focus={focus}
             onToggleBasemap={toggleBasemap}
             frame={frame}
+            flow={timeMode && showFlow && particles ? { particles, frame: frameIdx as number } : null}
           />
         ) : (
           <div className="map map-loading" aria-busy="true">
@@ -713,8 +731,21 @@ export default function FloodMapApp() {
           )}
         </section>
 
-        {(active?.hasManholes || (traceLayer && traces)) && (
+        {(active?.hasManholes || (traceLayer && traces) || particles) && (
           <section className="layers" aria-label="지도에 함께 보기">
+            {particles && framesInfo && (
+              <>
+                <label className="check">
+                  <input type="checkbox" checked={showFlow} onChange={(e) => setShowFlow(e.target.checked)} />
+                  <span className="flow-key" aria-hidden="true" /> 하천 흐름 보기 (시간대별일 때)
+                </label>
+                {timeMode && showFlow && (
+                  <p className="muted small source-line">
+                    흰 줄은 그 시각 냉천의 단면 평균 유속(유량 ÷ 흐름 단면적)을 {SPEEDUP}배 빠르게 흘린 것입니다. 방향·빠르기 비교용 표현입니다.
+                  </p>
+                )}
+              </>
+            )}
             {active?.hasManholes && (
               <label className="check">
                 <input type="checkbox" checked={showManholes} onChange={(e) => setShowManholes(e.target.checked)} />

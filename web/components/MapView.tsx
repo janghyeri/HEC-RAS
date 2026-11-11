@@ -8,6 +8,7 @@ import type { GeoJSONSource, ImageSource, Map as MLMap, StyleSpecification } fro
 import { BASE_LAYERS, baseStyle, hasVworld, type Basemap } from "@/lib/basemap";
 import { absoluteUrl, scenarioUrl, type BBox, type Scenario } from "@/lib/data";
 import type { TraceCollection } from "@/lib/reference";
+import type { FlowParticles } from "@/lib/riverFlow";
 
 export interface Pick {
   lngLat: [number, number];
@@ -31,6 +32,8 @@ interface Props {
   onToggleBasemap: () => void;
   /** 시간대별 재생: 이 이미지(10분 침수심)를 최대 수심 대신 보여 준다 */
   frame?: { url: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
+  /** 하천 흐름 표시 (입자, lib/riverFlow) — 그 시각(frame) 유속으로 흘린다 */
+  flow?: { particles: FlowParticles; frame: number } | null;
 }
 
 const floodId = (s: Scenario) => `flood-${s.ref.scenario_id}`;
@@ -69,8 +72,11 @@ class BasemapControl {
 }
 
 export default function MapView(props: Props) {
-  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap, frame = null } =
+  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap, frame = null, flow = null } =
     props;
+  const flowRef = useRef(flow);
+  flowRef.current = flow;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -172,6 +178,56 @@ export default function MapView(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 하천 흐름 표시: 지도 위 투명 캔버스에 흰 줄을 그린다 (지도 움직임과 함께 매 화면 다시 계산)
+  const flowOn = flow !== null;
+  useEffect(() => {
+    const map = mapRef.current;
+    const cv = canvasRef.current;
+    if (!map || !ready || !cv || !flowOn) return;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    let last = performance.now();
+    const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
+      const f = flowRef.current;
+      const dpr = window.devicePixelRatio || 1;
+      const w = cv.clientWidth;
+      const h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+        cv.width = Math.round(w * dpr);
+        cv.height = Math.round(h * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      if (!f) return;
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      f.particles.step(dt, f.frame);
+      ctx.lineCap = "round";
+      for (const st of f.particles.streaks(f.frame)) {
+        const a = map.project(st.tail);
+        const b = map.project(st.head);
+        if ((a.x < -50 && b.x < -50) || (a.x > w + 50 && b.x > w + 50) || (a.y < -50 && b.y < -50) || (a.y > h + 50 && b.y > h + 50)) continue;
+        const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+        g.addColorStop(0, "rgba(255,255,255,0)");
+        g.addColorStop(1, `rgba(255,255,255,${(0.9 * st.alpha).toFixed(3)})`);
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    };
+    raf = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(raf);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+    };
+  }, [ready, flowOn]);
+
   // 시간대별 이미지 (한 장을 계속 바꿔 끼운다 — 이미지는 브라우저 캐시에서 바로 읽힘)
   useEffect(() => {
     const map = mapRef.current;
@@ -245,5 +301,10 @@ export default function MapView(props: Props) {
     map.flyTo({ center: focus.lngLat, zoom: focus.zoom, padding: mapPadding(), duration: 900 });
   }, [ready, focus]);
 
-  return <div ref={box} className="map" aria-label="침수 지도" />;
+  return (
+    <div className="map-wrap">
+      <div ref={box} className="map" aria-label="침수 지도" />
+      <canvas ref={canvasRef} className="flow-canvas" aria-hidden="true" style={{ display: flowOn ? "block" : "none" }} />
+    </div>
+  );
 }
