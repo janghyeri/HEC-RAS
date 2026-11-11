@@ -158,6 +158,11 @@
       status("");
       setupPick();
       guardRender();
+      S.viewer.camera.moveEnd.addEventListener(function () {
+        try {
+          updateRoofs();
+        } catch (e) {}
+      });
       setBuildings($("bld").checked);
       setNames($("names").checked);
       setAdmin($("adm").checked);
@@ -238,7 +243,10 @@
   // → LoD1만 쓰고 한 가지 중립색으로 칠한다. 레이어가 늦게 생기면 몇 번 다시 시도.
   // LoD1 모형은 재질이 반투명(alphaMode BLEND)이고 법선이 없어 건물이 비쳐 겹쳐 보이고 면 구분이 안 됐다 (사용자 지적 11/11)
   // → 직접 쓴 셰이더로 불투명하게 그리고, 화면 미분으로 면 방향을 구해 남서쪽 빛으로 벽·지붕 명암을 준다.
-  //   건물마다 밝기를 ±4 % 달리해 붙은 건물도 구별되게, 벽에는 층 줄·창 무늬(표현용). 셰이더를 쓸 수 없거나 오류가 나면 단색으로 돌아간다
+  //   건물마다 밝기를 ±4 % 달리해 붙은 건물도 구별되게. 셰이더를 쓸 수 없거나 오류가 나면 단색으로 돌아간다.
+  // 지붕에는 브이월드 항공사진(WMTS Satellite, 2D 지도와 같은 키)을 입힌다 — 카메라가 보는 곳 둘레 약 2 km를 z17 타일 8×8로
+  // 이어 붙여 텍스처로 넘기고, 보는 곳이 500 m쯤 옮겨 가면 다시 만든다. 벽은 실제 외관 사진이 없어 단색 + 명암
+  // (카카오·네이버 로드뷰 사진은 실시간 보기 외 캡처·가공이 허용되지 않아 쓰지 않는다, 2026-11-11 확인)
   var BLD_COLOR = "#d6d0c4";
   var BLD_FS = [
     "void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {",
@@ -246,9 +254,14 @@
     "  vec3 pMC = fsInput.attributes.positionMC;",
     "  vec3 n = normalize(cross(dFdx(pEC), dFdy(pEC)));",
     "  if (dot(n, -pEC) < 0.0) n = -n;",
-    "  vec3 upW = normalize((czm_inverseView * vec4(pEC, 1.0)).xyz);",
-    "  vec3 eastW = normalize(cross(vec3(0.0, 0.0, 1.0), upW));",
-    "  vec3 northW = cross(upW, eastW);",
+    // 타일 원점(지구 중심 좌표)의 경위도·동/북 방향. 건물 좌표는 원점에서의 차이(모형 좌표)로 더해 정밀도를 지킨다
+    "  vec3 O = czm_model[3].xyz;",
+    "  vec3 upW = normalize(O);",
+    "  float lon0 = atan(O.y, O.x);",
+    "  float lat0 = atan(O.z, length(O.xy) * (1.0 - 0.00669438));",
+    "  vec3 eastW = vec3(-sin(lon0), cos(lon0), 0.0);",
+    "  vec3 northW = vec3(-sin(lat0) * cos(lon0), -sin(lat0) * sin(lon0), cos(lat0));",
+    "  vec3 d = mat3(czm_model) * pMC;",
     "  vec3 upEC = normalize(czm_viewRotation * upW);",
     "  vec3 L = normalize(czm_viewRotation * normalize(upW * 0.75 - eastW * 0.45 - northW * 0.55));",
     "  float diff = max(dot(n, L), 0.0);",
@@ -257,21 +270,17 @@
     "  float tint = fract(sin(id * 12.9898) * 43758.5453) * 0.08 - 0.04;",
     "  vec3 base = vec3(0.80, 0.77, 0.72) * (1.0 + tint);",
     "  vec3 wall = base * (0.55 + 0.45 * diff);",
-    // 층 줄(3.2 m)·창(가로 2.8 m) 무늬 — 모형 좌표로 계산 (지구 중심 좌표는 float 정밀도가 0.5 m 남짓이라 줄이 흔들림).
-    // 실제 창 위치가 아닌 표현이고, 멀리서는 무늬가 자글거리지 않게 흐려진다
-    "  vec3 o = (czm_inverseModel * vec4(czm_model[3].xyz, 1.0)).xyz;",
-    "  vec3 upMC = normalize((czm_inverseModel * vec4(czm_model[3].xyz + upW, 1.0)).xyz - o);",
-    "  vec3 nMC = normalize(cross(dFdx(pMC), dFdy(pMC)));",
-    "  vec3 tMC = normalize(cross(upMC, nMC) + vec3(1e-6));",
-    "  float h = dot(pMC, upMC) / 3.2;",
-    "  float u = dot(pMC, tMC) / 2.8;",
-    "  float fade = clamp(1.6 - max(fwidth(h), fwidth(u)) * 6.0, 0.0, 1.0);",
-    "  float fl = 1.0 - smoothstep(0.0, 0.06, fract(h)) * smoothstep(1.0, 0.94, fract(h));",
-    "  float win = step(0.30, fract(h)) * step(fract(h), 0.78) * step(0.22, fract(u)) * step(fract(u), 0.78);",
-    "  vec3 glass = vec3(0.36, 0.42, 0.48) * (0.75 + 0.35 * diff);",
-    "  vec3 w2 = mix(wall, glass, win * 0.68 * fade);",
-    "  w2 *= 1.0 - fl * 0.14 * fade;",
-    "  material.diffuse = mix(w2, base * 1.1, roof);",
+    "  vec3 top = base * 1.1;",
+    // 지붕: 카메라 주변 항공사진(웹 메르카토르 타일을 이어 붙인 텍스처, u_roofRect = 서·동 경도, 남·북 메르카토르 y, 라디안)
+    "  if (u_roofOn > 0.5) {",
+    "    float cl = cos(lat0);",
+    "    float wE = u_roofRect.y - u_roofRect.x;",
+    "    float wN = u_roofRect.w - u_roofRect.z;",
+    "    float s = (lon0 - u_roofRect.x) / wE + dot(d, eastW) / (6371000.0 * cl * wE);",
+    "    float t = (u_roofRect.w - log(tan(0.7853981634 + lat0 * 0.5))) / wN - dot(d, northW) / (6371000.0 * cl * wN);",
+    "    if (s > 0.0 && s < 1.0 && t > 0.0 && t < 1.0) top = texture2D(u_roof, vec2(s, t)).rgb;",
+    "  }",
+    "  material.diffuse = mix(wall, top, roof);",
     "  material.alpha = 1.0;",
     "}",
   ].join("\n");
@@ -302,6 +311,11 @@
             lightingModel: Cesium.LightingModel.UNLIT,
             translucencyMode: Cesium.CustomShaderTranslucencyMode.OPAQUE,
             fragmentShaderText: BLD_FS,
+            uniforms: {
+              u_roof: { type: Cesium.UniformType.SAMPLER_2D, value: new Cesium.TextureUniform({ typedArray: new Uint8Array([200, 196, 184, 255]), width: 1, height: 1 }) },
+              u_roofRect: { type: Cesium.UniformType.VEC4, value: new Cesium.Cartesian4(0, 1, 0, 1) },
+              u_roofOn: { type: Cesium.UniformType.FLOAT, value: 0 },
+            },
           });
       } catch (e) {
         S.bldShader = null;
@@ -326,6 +340,82 @@
     }
     return true;
   }
+  // ---- 지붕 항공사진
+  var ROOF_Z = 17,
+    ROOF_N = 8; // 8×8 타일 = 2048 화소 ≈ 2 km (위도 36°에서 화소 약 1 m)
+  function updateRoofs() {
+    var sh = S.bldShader;
+    if (!sh || !C.vworldKey || !$("bld").checked || (S.roof && S.roof.loading)) return;
+    var cam = S.viewer.camera;
+    if (cam.positionCartographic.height > 3000) return; // 건물(LoD1)이 안 보이는 높이
+    var cv = S.viewer.scene.canvas;
+    var hit = cam.pickEllipsoid(new Cesium.Cartesian2(cv.clientWidth / 2, cv.clientHeight * 0.6));
+    if (!hit) return;
+    var c = Cesium.Cartographic.fromCartesian(hit);
+    var n = Math.pow(2, ROOF_Z);
+    var cx = Math.floor(((c.longitude + Math.PI) / (2 * Math.PI)) * n);
+    var cy = Math.floor(((1 - Math.log(Math.tan(c.latitude) + 1 / Math.cos(c.latitude)) / Math.PI) / 2) * n);
+    if (S.roof && Math.abs(cx - S.roof.cx) <= 2 && Math.abs(cy - S.roof.cy) <= 2) return;
+    var x0 = cx - ROOF_N / 2,
+      y0 = cy - ROOF_N / 2,
+      size = 256 * ROOF_N;
+    var canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "rgb(200,196,184)";
+    ctx.fillRect(0, 0, size, size);
+    S.roof = { cx: cx, cy: cy, loading: true };
+    var jobs = [];
+    for (var j = 0; j < ROOF_N; j++)
+      for (var i = 0; i < ROOF_N; i++)
+        (function (i, j) {
+          var url = "https://api.vworld.kr/req/wmts/1.0.0/" + encodeURIComponent(C.vworldKey) + "/Satellite/" + ROOF_Z + "/" + (y0 + j) + "/" + (x0 + i) + ".jpeg";
+          jobs.push(
+            fetch(url, { mode: "cors" })
+              .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                return r.blob();
+              })
+              .then(function (b) {
+                return createImageBitmap(b);
+              })
+              .then(function (img) {
+                ctx.drawImage(img, i * 256, j * 256);
+              })
+              .catch(function () {})
+          );
+        })(i, j);
+    Promise.all(jobs).then(function () {
+      S.roof.loading = false;
+      if (S.bldShader !== sh) return;
+      try {
+        var px = new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
+        var lon = function (x) {
+          return (x / n) * 2 * Math.PI - Math.PI;
+        };
+        var merc = function (y) {
+          return Math.PI * (1 - (2 * y) / n);
+        };
+        sh.setUniform(
+          "u_roof",
+          new Cesium.TextureUniform({
+            typedArray: px,
+            width: size,
+            height: size,
+            minificationFilter: Cesium.TextureMinificationFilter.LINEAR,
+            magnificationFilter: Cesium.TextureMagnificationFilter.LINEAR,
+          })
+        );
+        sh.setUniform("u_roofRect", new Cesium.Cartesian4(lon(x0), lon(x0 + ROOF_N), merc(y0 + ROOF_N), merc(y0)));
+        sh.setUniform("u_roofOn", 1);
+        S.viewer.scene.requestRender();
+      } catch (e) {
+        console.warn("[3D] 지붕 사진을 넣지 못함", e);
+      }
+    });
+  }
+
   function dropBuildingShader() {
     if (!S.bldShader) return;
     S.bldShader = null;
@@ -900,6 +990,7 @@
       last = now;
       try {
         if (S.bldStyle && $("bld").checked) styleBuildings();
+        if ((S.tick = (S.tick || 0) + 1) % 30 === 0) updateRoofs();
         updateFlow(dt);
         updateFlood(dt);
         updateWater(now);

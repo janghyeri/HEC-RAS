@@ -17,6 +17,7 @@ export function GET() {
     supabaseUrl: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, ""),
     anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
     hasKey: key.length > 0,
+    vworldKey: key, // 지붕 항공사진(WMTS Satellite)용 — 같은 키가 위 스크립트 주소에도 이미 공개되어 있음
     classes: DEPTH_CLASSES.map((c) => ({ ...c, hi: Number.isFinite(c.hi) ? c.hi : null })),
   };
   const html = `<!doctype html>
@@ -83,7 +84,7 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
         <label><input type="checkbox" id="names" /> 건물·상호 이름</label>
       </fieldset>
       <div id="pick" class="v3-pick" aria-live="polite"><span class="muted">지도를 누르면 그 자리의 침수심 등급을 보여 줍니다.</span></div>
-      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 시간대별 물 표면의 물결은 그 시각 유속 방향으로 움직이는 표현이고, 색은 수심 등급 그대로입니다. 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 건물 가운데 건물 바닥 모양을 높이 자료만큼 올린 상자(LoD1)만 불투명한 한 가지 색으로 칠하고 벽·지붕에 명암을 넣었으며(벽의 층 줄·창 무늬는 3.2 m·2.8 m 간격 표현으로 실제 창 위치가 아님), 지도를 가까이(높이 약 1.5 km 아래) 볼 때 나타납니다. 행정구역은 통계청 통계지리정보서비스 행정동 경계(2022년 7월 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료(CC BY 4.0)입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
+      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 시간대별 물 표면의 물결은 그 시각 유속 방향으로 움직이는 표현이고, 색은 수심 등급 그대로입니다. 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 건물 가운데 건물 바닥 모양을 높이 자료만큼 올린 상자(LoD1)만 불투명하게 그리고, 지붕에는 브이월드 항공사진을 입혔습니다(높은 건물은 사진이 비스듬히 찍혀 지붕 무늬가 조금 밀릴 수 있음). 벽은 실제 외관 사진이 없어 한 가지 색에 명암만 넣었고, 지도를 가까이(높이 약 1.5 km 아래) 볼 때 나타납니다. 행정구역은 통계청 통계지리정보서비스 행정동 경계(2022년 7월 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료(CC BY 4.0)입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
     </div>
   </aside>
 </main>
