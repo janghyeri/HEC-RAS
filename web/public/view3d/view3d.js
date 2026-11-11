@@ -482,7 +482,7 @@
       getJSON(fileUrl(item, "kpi.json")).catch(function () {
         return null;
       }),
-      getJSON(fileUrl(item, "river_flow.json")).catch(function () {
+      getJSON(fileUrl(item, "river_flow.json"), { cache: "no-cache" }).catch(function () {
         return null;
       }),
     ]).then(function (r) {
@@ -710,7 +710,8 @@
 
   // ---- 범람 구역 (flow2d.bin: Uint32 격자 번호[n] + 시각마다 Int8 동[n]·북[n], −128 = 마름)
   function loadFlow2d(item) {
-    getJSON(fileUrl(item, "flow2d.json"))
+    // no-cache: 파일이 나중에 생기는 경우(배치로 추가) 브라우저에 남은 404를 쓰지 않게 매번 확인
+    getJSON(fileUrl(item, "flow2d.json"), { cache: "no-cache" })
       .then(function (meta) {
         return fetch(fileUrl(item, meta.file || "flow2d.bin", meta.generated_at))
           .then(function (r) {
