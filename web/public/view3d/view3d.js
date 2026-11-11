@@ -238,11 +238,12 @@
   // → LoD1만 쓰고 한 가지 중립색으로 칠한다. 레이어가 늦게 생기면 몇 번 다시 시도.
   // LoD1 모형은 재질이 반투명(alphaMode BLEND)이고 법선이 없어 건물이 비쳐 겹쳐 보이고 면 구분이 안 됐다 (사용자 지적 11/11)
   // → 직접 쓴 셰이더로 불투명하게 그리고, 화면 미분으로 면 방향을 구해 남서쪽 빛으로 벽·지붕 명암을 준다.
-  //   건물마다 밝기를 ±4 % 달리해 붙은 건물도 구별되게. 셰이더를 쓸 수 없거나 오류가 나면 단색으로 돌아간다
+  //   건물마다 밝기를 ±4 % 달리해 붙은 건물도 구별되게, 벽에는 층 줄·창 무늬(표현용). 셰이더를 쓸 수 없거나 오류가 나면 단색으로 돌아간다
   var BLD_COLOR = "#d6d0c4";
   var BLD_FS = [
     "void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {",
     "  vec3 pEC = fsInput.attributes.positionEC;",
+    "  vec3 pMC = fsInput.attributes.positionMC;",
     "  vec3 n = normalize(cross(dFdx(pEC), dFdy(pEC)));",
     "  if (dot(n, -pEC) < 0.0) n = -n;",
     "  vec3 upW = normalize((czm_inverseView * vec4(pEC, 1.0)).xyz);",
@@ -256,7 +257,21 @@
     "  float tint = fract(sin(id * 12.9898) * 43758.5453) * 0.08 - 0.04;",
     "  vec3 base = vec3(0.80, 0.77, 0.72) * (1.0 + tint);",
     "  vec3 wall = base * (0.55 + 0.45 * diff);",
-    "  material.diffuse = mix(wall, base * 1.1, roof);",
+    // 층 줄(3.2 m)·창(가로 2.8 m) 무늬 — 모형 좌표로 계산 (지구 중심 좌표는 float 정밀도가 0.5 m 남짓이라 줄이 흔들림).
+    // 실제 창 위치가 아닌 표현이고, 멀리서는 무늬가 자글거리지 않게 흐려진다
+    "  vec3 o = (czm_inverseModel * vec4(czm_model[3].xyz, 1.0)).xyz;",
+    "  vec3 upMC = normalize((czm_inverseModel * vec4(czm_model[3].xyz + upW, 1.0)).xyz - o);",
+    "  vec3 nMC = normalize(cross(dFdx(pMC), dFdy(pMC)));",
+    "  vec3 tMC = normalize(cross(upMC, nMC) + vec3(1e-6));",
+    "  float h = dot(pMC, upMC) / 3.2;",
+    "  float u = dot(pMC, tMC) / 2.8;",
+    "  float fade = clamp(1.6 - max(fwidth(h), fwidth(u)) * 6.0, 0.0, 1.0);",
+    "  float fl = 1.0 - smoothstep(0.0, 0.06, fract(h)) * smoothstep(1.0, 0.94, fract(h));",
+    "  float win = step(0.30, fract(h)) * step(fract(h), 0.78) * step(0.22, fract(u)) * step(fract(u), 0.78);",
+    "  vec3 glass = vec3(0.36, 0.42, 0.48) * (0.75 + 0.35 * diff);",
+    "  vec3 w2 = mix(wall, glass, win * 0.68 * fade);",
+    "  w2 *= 1.0 - fl * 0.14 * fade;",
+    "  material.diffuse = mix(w2, base * 1.1, roof);",
     "  material.alpha = 1.0;",
     "}",
   ].join("\n");
