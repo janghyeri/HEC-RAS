@@ -8,7 +8,6 @@ import type { GeoJSONSource, ImageSource, Map as MLMap, StyleSpecification } fro
 import { BASE_LAYERS, baseStyle, hasVworld, type Basemap } from "@/lib/basemap";
 import { absoluteUrl, scenarioUrl, type BBox, type Scenario } from "@/lib/data";
 import type { TraceCollection } from "@/lib/reference";
-import type { FlowParticles } from "@/lib/riverFlow";
 
 export interface Pick {
   lngLat: [number, number];
@@ -32,9 +31,17 @@ interface Props {
   onToggleBasemap: () => void;
   /** 시간대별 재생: 이 이미지(10분 침수심)를 최대 수심 대신 보여 준다 */
   frame?: { url: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
-  /** 하천 흐름 표시 (입자, lib/riverFlow) — 그 시각(frame) 유속으로 흘린다 */
-  flow?: { particles: FlowParticles; frame: number } | null;
+  /** 행정구역(시군구·읍면동) 경계선과 이름 */
+  showAdmin?: boolean;
+  /** 브이월드 지명(건물·상호·도로 이름) 레이어 — 항공사진일 때만 */
+  showNames?: boolean;
 }
+
+const ADMIN_URL = "/data/admin/boundaries.geojson";
+const ADMIN_ATTR =
+  '행정구역: <a href="https://sgis.kostat.go.kr" target="_blank" rel="noreferrer">통계청 SGIS</a> 행정동 경계(2022-07, 공공누리 제1유형)·<a href="https://github.com/vuski/admdongkor" target="_blank" rel="noreferrer">vuski/admdongkor</a> 가공(CC BY 4.0)';
+const ADMIN_LAYERS = ["admin-emd-casing", "admin-emd", "admin-sgg-casing", "admin-sgg"];
+const EMD_MIN_ZOOM = 12.5; // 이보다 가까우면 읍면동 이름, 멀면 시군구 이름
 
 const floodId = (s: Scenario) => `flood-${s.ref.scenario_id}`;
 const manholeId = (s: Scenario) => `manholes-${s.ref.scenario_id}`;
@@ -72,11 +79,10 @@ class BasemapControl {
 }
 
 export default function MapView(props: Props) {
-  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap, frame = null, flow = null } =
-    props;
-  const flowRef = useRef(flow);
-  flowRef.current = flow;
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { bbox, scenarios, activeId, basemap, showManholes, traces, showTraces, selectedRing, picked, onPick, focus, onToggleBasemap, frame = null,
+    showAdmin = true, showNames = false } = props;
+  const labelsRef = useRef<{ el: HTMLElement; level: string }[]>([]);
+  const applyLabelsRef = useRef<() => void>(() => undefined);
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -149,6 +155,42 @@ export default function MapView(props: Props) {
             });
           }
         }
+        // 행정구역: 시군구 = 흰 테두리 + 진한 선, 같은 시군구 안 읍면동 = 흰 점선 (수심 파랑과 겹치지 않게 무채색)
+        map.addSource("admin", { type: "geojson", data: absoluteUrl(ADMIN_URL), attribution: ADMIN_ATTR });
+        const isLevel = (lv: string) => ["all", ["==", ["get", "kind"], "boundary"], ["==", ["get", "level"], lv]] as never;
+        map.addLayer({ id: "admin-emd-casing", type: "line", source: "admin", filter: isLevel("emd"),
+          paint: { "line-color": "#17212b", "line-opacity": 0.35, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 16, 3.5] } });
+        map.addLayer({ id: "admin-emd", type: "line", source: "admin", filter: isLevel("emd"),
+          paint: { "line-color": "#ffffff", "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.8, 16, 1.8], "line-dasharray": [3, 2] } });
+        map.addLayer({ id: "admin-sgg-casing", type: "line", source: "admin", filter: isLevel("sgg"),
+          paint: { "line-color": "#ffffff", "line-opacity": 0.85, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 16, 6] } });
+        map.addLayer({ id: "admin-sgg", type: "line", source: "admin", filter: isLevel("sgg"),
+          paint: { "line-color": "#17212b", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.2, 16, 2.4] } });
+        // 이름은 HTML 표지로 (이 지도 양식에는 글꼴(glyphs)이 없어 기호 레이어 글자를 쓸 수 없음)
+        fetch(absoluteUrl(ADMIN_URL))
+          .then((r) => (r.ok ? r.json() : null))
+          .then((fc) => {
+            if (!fc || !map) return;
+            for (const f of fc.features as { properties: Record<string, string>; geometry: { coordinates: [number, number] } }[]) {
+              const p = f.properties;
+              if (p.kind !== "label") continue;
+              const el = document.createElement("div");
+              el.className = `adm-label adm-${p.level}`;
+              el.setAttribute("aria-hidden", "true");
+              const b = document.createElement("b");
+              b.textContent = p.name;
+              el.appendChild(b);
+              if (p.level === "emd" && p.sgg) {
+                const sm = document.createElement("span");
+                sm.textContent = p.sgg;
+                el.appendChild(sm);
+              }
+              new ml.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map);
+              labelsRef.current.push({ el, level: p.level });
+            }
+            applyLabelsRef.current();
+          })
+          .catch(() => undefined);
         // 실제 침수흔적: 흰 테두리 + 진한 적갈색 점선 (파란 수심 색·주황 맨홀 점과 구별)
         map.addSource("traces", { type: "geojson", data: EMPTY });
         map.addLayer({ id: "traces-halo", type: "line", source: "traces", layout: { visibility: "none" },
@@ -177,56 +219,6 @@ export default function MapView(props: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 하천 흐름 표시: 지도 위 투명 캔버스에 흰 줄을 그린다 (지도 움직임과 함께 매 화면 다시 계산)
-  const flowOn = flow !== null;
-  useEffect(() => {
-    const map = mapRef.current;
-    const cv = canvasRef.current;
-    if (!map || !ready || !cv || !flowOn) return;
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    let raf = 0;
-    let last = performance.now();
-    const draw = (now: number) => {
-      raf = requestAnimationFrame(draw);
-      const f = flowRef.current;
-      const dpr = window.devicePixelRatio || 1;
-      const w = cv.clientWidth;
-      const h = cv.clientHeight;
-      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
-        cv.width = Math.round(w * dpr);
-        cv.height = Math.round(h * dpr);
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      if (!f) return;
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      f.particles.step(dt, f.frame);
-      ctx.lineCap = "round";
-      for (const st of f.particles.streaks(f.frame)) {
-        const a = map.project(st.tail);
-        const b = map.project(st.head);
-        if ((a.x < -50 && b.x < -50) || (a.x > w + 50 && b.x > w + 50) || (a.y < -50 && b.y < -50) || (a.y > h + 50 && b.y > h + 50)) continue;
-        const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-        g.addColorStop(0, "rgba(255,255,255,0)");
-        g.addColorStop(1, `rgba(255,255,255,${(0.9 * st.alpha).toFixed(3)})`);
-        ctx.strokeStyle = g;
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-    };
-    raf = requestAnimationFrame(draw);
-    return () => {
-      cancelAnimationFrame(raf);
-      ctx.clearRect(0, 0, cv.width, cv.height);
-    };
-  }, [ready, flowOn]);
 
   // 시간대별 이미지 (한 장을 계속 바꿔 끼운다 — 이미지는 브라우저 캐시에서 바로 읽힘)
   useEffect(() => {
@@ -271,14 +263,31 @@ export default function MapView(props: Props) {
     map.setLayoutProperty("traces-line", "visibility", vis);
   }, [ready, traces, showTraces]);
 
-  // 배경지도 전환
+  // 배경지도 전환 · 지명(건물·상호·도로 이름) 켜고 끄기
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !hasVworld()) return;
     map.setLayoutProperty(BASE_LAYERS.photo, "visibility", basemap === "photo" ? "visible" : "none");
-    map.setLayoutProperty(BASE_LAYERS.label, "visibility", basemap === "photo" ? "visible" : "none");
+    map.setLayoutProperty(BASE_LAYERS.label, "visibility", basemap === "photo" && showNames ? "visible" : "none");
     map.setLayoutProperty(BASE_LAYERS.map, "visibility", basemap === "map" ? "visible" : "none");
-  }, [ready, basemap]);
+  }, [ready, basemap, showNames]);
+
+  // 행정구역 경계·이름 (이름은 확대 정도에 따라 시군구 ↔ 읍면동)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const id of ADMIN_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", showAdmin ? "visible" : "none");
+    const apply = () => {
+      const near = map.getZoom() >= EMD_MIN_ZOOM;
+      for (const l of labelsRef.current) l.el.style.display = showAdmin && (l.level === "emd") === near ? "" : "none";
+    };
+    applyLabelsRef.current = apply;
+    apply();
+    map.on("zoomend", apply);
+    return () => {
+      map.off("zoomend", apply);
+    };
+  }, [ready, showAdmin]);
 
   // 선택한 격자·위치
   useEffect(() => {
@@ -301,10 +310,5 @@ export default function MapView(props: Props) {
     map.flyTo({ center: focus.lngLat, zoom: focus.zoom, padding: mapPadding(), duration: 900 });
   }, [ready, focus]);
 
-  return (
-    <div className="map-wrap">
-      <div ref={box} className="map" aria-label="침수 지도" />
-      <canvas ref={canvasRef} className="flow-canvas" aria-hidden="true" style={{ display: flowOn ? "block" : "none" }} />
-    </div>
-  );
+  return <div ref={box} className="map" aria-label="침수 지도" />;
 }

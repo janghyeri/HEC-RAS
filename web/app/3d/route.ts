@@ -66,16 +66,24 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
         <output id="tlabel" class="v3-tlabel"></output>
       </div>
       <p id="nowline" class="v3-now"></p>
+      <div class="v3-flowrow">
+        <button type="button" id="flowbtn" class="v3-toggle" aria-pressed="false">흐름 보기</button>
+        <span id="flowinfo" class="v3-flowinfo"></span>
+      </div>
+      <p id="flownote" class="v3-note" hidden>흰 줄은 물이 흐르는 방향과 빠르기(길수록 빠름)를 실제보다 100배 빠르게 흘린 것입니다. 하천은 단면 평균 유속(유량 ÷ 흐름 단면적), 범람 구역은 HEC-RAS 셀 경계면 유속으로 다시 계산한 셀 유속(20 m 격자)으로 그렸고, 방향·빠르기 비교용 표현입니다.</p>
       <ul id="legend" class="v3-legend" aria-label="침수심 범례"></ul>
       <div class="v3-views">
         <button type="button" data-view="tilt">비스듬히 보기</button>
         <button type="button" data-view="top">위에서 보기</button>
-        <label><input type="checkbox" id="bld" checked /> 건물 (흰 상자)</label>
-        <label><input type="checkbox" id="flow" checked /> 하천 흐름</label>
       </div>
-      <p class="v3-note">하천 흐름(시간대별일 때): 흰 줄은 그 시각 냉천의 단면 평균 유속(유량 ÷ 흐름 단면적)을 100배 빠르게 흘린 것으로, 방향·빠르기 비교용 표현입니다.</p>
+      <fieldset class="v3-layers">
+        <legend>지도에 함께 보기</legend>
+        <label><input type="checkbox" id="bld" checked /> 건물 (높이 자료로 올린 상자)</label>
+        <label><input type="checkbox" id="adm" checked /> 행정구역 경계·이름 (시군구·읍면동)</label>
+        <label><input type="checkbox" id="names" /> 건물·상호 이름</label>
+      </fieldset>
       <div id="pick" class="v3-pick" aria-live="polite"><span class="muted">지도를 누르면 그 자리의 침수심 등급을 보여 줍니다.</span></div>
-      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 입체모형으로, 냉천 일대는 높이만 있는 흰 상자이며 지도를 가까이(높이 약 1.5 km 아래) 볼 때 나타납니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
+      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 시간대별 물 표면의 물결은 그 시각 유속 방향으로 움직이는 표현이고, 색은 수심 등급 그대로입니다. 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 건물 가운데 건물 바닥 모양을 높이 자료만큼 올린 상자(LoD1)만 한 가지 색으로 칠했고, 지도를 가까이(높이 약 1.5 km 아래) 볼 때 나타납니다. 행정구역은 통계청 통계지리정보서비스 행정동 경계(2022년 7월 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료(CC BY 4.0)입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
     </div>
   </aside>
 </main>

@@ -27,6 +27,14 @@
     swap: 0,
     images: {},
     flow: null, // 하천 흐름 표시 {model, ps, lines}
+    f2: null, // 범람 구역 흐름 (flow2d.json·bin)
+    flood: null, // 범람 구역 흰 줄 {ps, lines}
+    flowOn: false, // '흐름 보기' 버튼
+    peak: 0, // 최대 침수심 보기에서 흐름을 보여 줄 시각 (침수면적이 가장 넓은 때)
+    water: null, // 시간대별 물 표면 (GroundPrimitive + 물결 재질), 만들 수 없으면 false
+    admin: null, // 행정구역 경계·이름 (CustomDataSource)
+    bldStyle: null,
+    t0: performance.now(),
     ready: false,
   };
 
@@ -149,7 +157,10 @@
       S.ready = true;
       status("");
       setupPick();
+      guardRender();
       setBuildings($("bld").checked);
+      setNames($("names").checked);
+      setAdmin($("adm").checked);
       ensureFlowLines();
       applyScenario();
       // 처음 비스듬한 시점으로. 브이월드가 초기화 뒤 카메라를 자기 처음 위치(우주·수직 시점 등)로 옮기는 일이 있어,
@@ -221,28 +232,147 @@
     }
   }
 
-  // 브이월드 3차원 건물: facility_build(사진 입힌 LoD4 — 포항 도심만 있음), facility_build_lod1(높이만 있는 흰 상자).
-  // 3.0은 LoD1이 꺼진 채 시작해서 냉천 일대에 건물이 안 보였다 (2026-11-11) → 처음에 켠다. 레이어가 늦게 생기면 몇 번 다시 시도
-  var BUILDINGS = ["facility_build", "facility_build_lod1"];
+  // ------------------------------------------------------------ 브이월드 레이어: 건물·이름·행정경계
+  // 건물: facility_build(사진 입힌 LoD4)와 facility_build_lod1(건물 바닥 모양을 높이 자료 BLDH_HT만큼 올린 상자)이
+  // 겹쳐 떠서 색이 섞였고, LoD1은 건물 구분(BULD_SE)별로 파란 계열·노랑·분홍으로 칠해져 침수심 색과 헷갈렸다 (2026-11-11)
+  // → LoD1만 쓰고 한 가지 중립색으로 칠한다. 레이어가 늦게 생기면 몇 번 다시 시도
+  var BLD_COLOR = "#d6d0c4";
+  function vwEl(id) {
+    try {
+      return (S.map && (S.map.getElementById(id) || S.map.getLayerElement(id))) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function vwShow(id, on) {
+    var el = vwEl(id);
+    if (!el) return false;
+    try {
+      if (on) el.show();
+      else el.hide();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  function styleBuildings() {
+    var ts = S.bldTs;
+    if (!ts || (ts.isDestroyed && ts.isDestroyed())) {
+      var el = vwEl("facility_build_lod1");
+      ts = S.bldTs = (el && el._tileset) || null;
+    }
+    if (!ts) return false;
+    if (!S.bldStyle) S.bldStyle = new Cesium.Cesium3DTileStyle({ color: "color('" + BLD_COLOR + "')" });
+    if (ts.style !== S.bldStyle) ts.style = S.bldStyle;
+    return true;
+  }
   function setBuildings(on, tries) {
-    var missing = 0;
-    BUILDINGS.forEach(function (id) {
-      try {
-        var el = S.map && (S.map.getElementById(id) || S.map.getLayerElement(id));
-        if (!el) {
-          missing++;
-          return;
-        }
-        if (on) el.show();
-        else el.hide();
-      } catch (e) {
-        missing++;
-      }
-    });
-    if (missing && (tries || 0) < 6)
+    vwShow("facility_build", false);
+    var ok = vwShow("facility_build_lod1", on);
+    if (on) ok = styleBuildings() && ok;
+    if (S.viewer) S.viewer.scene.requestRender();
+    if (!ok && (tries || 0) < 15)
       setTimeout(function () {
         setBuildings($("bld").checked, (tries || 0) + 1);
       }, 1000);
+  }
+  // 이름: poi_base(한글 명칭 — 건물·상호), poi_eng(영문). 처음에는 끈다 (사용자 요청 2026-11-11: 건물 이름이 많아 복잡함)
+  function setNames(on, tries) {
+    var ok = vwShow("poi_base", on);
+    vwShow("poi_eng", false);
+    if (S.viewer) S.viewer.scene.requestRender();
+    if (!ok && (tries || 0) < 15)
+      setTimeout(function () {
+        setNames($("names").checked, (tries || 0) + 1);
+      }, 1000);
+  }
+  // 행정구역: 우리 자료(행정동 2022-07, data/admin/boundaries.geojson)를 쓰고, 브이월드 법정경계 선(hybrid_bound)은 그동안 끈다
+  // (법정동·행정동 경계가 섞여 보이지 않게)
+  var INK = "#17212b";
+  function setAdmin(on) {
+    vwShow("hybrid_bound", !on);
+    vwShow("poi_bound", false);
+    if (on) ensureAdmin();
+    if (S.admin) S.admin.show = on;
+    if (S.viewer) S.viewer.scene.requestRender();
+  }
+  function ensureAdmin() {
+    if (S.admin || S.adminLoading || !S.viewer) return;
+    S.adminLoading = true;
+    getJSON(C.dataRoot + "/admin/boundaries.geojson")
+      .then(function (fc) {
+        var ds = new Cesium.CustomDataSource("admin");
+        var ink = Cesium.Color.fromCssColorString(INK);
+        var white = Cesium.Color.WHITE;
+        var ground = { clampToGround: true, classificationType: Cesium.ClassificationType.TERRAIN };
+        function line(pos, width, material) {
+          ds.entities.add({ polyline: Object.assign({ positions: pos, width: width, material: material }, ground) });
+        }
+        function label(c, text, font, offsetY, near, far, fill) {
+          ds.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(c[0], c[1]),
+            label: {
+              text: text,
+              font: font,
+              fillColor: fill || white,
+              outlineColor: ink,
+              outlineWidth: 3,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+              horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              pixelOffset: new Cesium.Cartesian2(0, offsetY),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(near, far),
+            },
+          });
+        }
+        fc.features.forEach(function (f) {
+          var p = f.properties;
+          if (p.kind === "boundary") {
+            var pos = Cesium.Cartesian3.fromDegreesArray([].concat.apply([], f.geometry.coordinates));
+            if (p.level === "sgg") {
+              line(pos, 6, white.withAlpha(0.85));
+              line(pos, 2.5, ink);
+            } else {
+              line(pos, 2.5, new Cesium.PolylineDashMaterialProperty({ color: white.withAlpha(0.9), gapColor: ink.withAlpha(0.35), dashLength: 18 }));
+            }
+          } else if (p.kind === "label") {
+            var c = f.geometry.coordinates;
+            if (p.level === "emd") {
+              label(c, p.name, '700 15px "Noto Sans KR", sans-serif', 0, 0, 16000);
+              label(c, p.sgg, '500 11px "Noto Sans KR", sans-serif', 15, 0, 16000, Cesium.Color.fromCssColorString("#e6edf3"));
+            } else {
+              label(c, p.name, '700 17px "Noto Sans KR", sans-serif', 0, 16000, 400000);
+            }
+          }
+        });
+        S.viewer.dataSources.add(ds);
+        S.admin = ds;
+        ds.show = $("adm").checked;
+        S.viewer.scene.requestRender();
+      })
+      .catch(function () {})
+      .then(function () {
+        S.adminLoading = false;
+      });
+  }
+
+  // 그리기 오류(셰이더 등)가 나면 Cesium이 화면 갱신을 멈춘다 → 이 화면이 더한 물 표면·흐름을 걷어내고 다시 그린다
+  function guardRender() {
+    S.viewer.scene.renderError.addEventListener(function (scene, err) {
+      console.warn("[3D] 그리기 오류 — 물결·흐름 표현을 끄고 다시 그림", err);
+      dropWater();
+      S.water = false;
+      setTimeout(function () {
+        try {
+          S.viewer.useDefaultRenderLoop = true;
+          var box = document.querySelector(".cesium-widget-errorPanel");
+          if (box) box.remove();
+          applyScenario();
+        } catch (e) {}
+      }, 0);
+    });
   }
 
   function rect(b) {
@@ -268,6 +398,7 @@
     S.swap++;
     if (S.frameLayer && S.viewer) S.viewer.imageryLayers.remove(S.frameLayer, true);
     S.frameLayer = null;
+    if (S.water) S.water.prim.show = false;
   }
 
   function makeSingle(url, rectangle) {
@@ -282,6 +413,10 @@
   // 새 이미지를 위에 올린 뒤 이전 것을 지운다 (바꿔 끼울 때 깜빡이지 않게)
   function showFrame(i) {
     if (!S.viewer || !S.frames) return;
+    if (ensureWater()) {
+      setWaterFrame(i);
+      return;
+    }
     var token = ++S.swap;
     var url = frameUrl(i);
     makeSingle(url, rect(S.frames.bounds))
@@ -325,6 +460,9 @@
 
   function selectItem(item) {
     stop();
+    dropWater();
+    if (S.water === false) S.water = null; // 결과가 바뀌면 물 표면을 다시 시도
+    setFlow2d(null);
     S.cur = item;
     S.tiles = null;
     S.frames = null;
@@ -355,8 +493,10 @@
       setFlowData(r[3]);
       if (!S.frames && S.mode === "time") S.mode = "max";
       if (S.frames) S.frame = Math.min(S.frame, S.frames.count - 1);
+      S.peak = peakFrame();
       renderControls();
       applyScenario();
+      loadFlow2d(item);
     });
   }
 
@@ -420,6 +560,19 @@
     });
     var tb = $("timebox");
     tb.hidden = S.mode !== "time" || !S.frames;
+    var fb = $("flowbtn");
+    var anyFlow = !!(S.flow && S.flow.model) || !!S.f2;
+    fb.disabled = !anyFlow;
+    fb.setAttribute("aria-pressed", String(S.flowOn && anyFlow));
+    fb.title = anyFlow ? "" : "이 결과는 흐름 자료가 없습니다";
+    $("flownote").hidden = !(S.flowOn && anyFlow);
+    var info = "";
+    if (S.flowOn && anyFlow) {
+      var times = (S.frames && S.frames.times) || (S.f2 && S.f2.meta.times) || null;
+      var t = flowFrame();
+      info = (S.mode === "time" ? "" : "침수면적이 가장 넓은 ") + (times ? hhmm(times[t]) : "") + " 흐름" + (S.f2 ? " · 하천+범람 구역" : " · 하천만 (범람 구역 자료 없음)");
+    }
+    $("flowinfo").textContent = info;
     var play = $("play");
     play.innerHTML = S.playing ? PAUSE : PLAY;
     play.setAttribute("aria-label", S.playing ? "멈춤" : "재생");
@@ -456,10 +609,13 @@
   }
 
 
-  // ------------------------------------------------------------ 하천 흐름 표시 (web/lib/riverFlow.ts와 같은 계산 — 바꾸면 둘 다)
-  // 시간대별로 볼 때, 멈춰 있어도 냉천 중심선을 따라 흰 줄이 그 시각 단면 평균 유속의 SPEEDUP배로 흐른다.
+  // ------------------------------------------------------------ 흐름 보기 (하천 river_flow.json + 범람 구역 flow2d)
+  // 흰 줄이 그 시각 유속의 SPEEDUP배로 흐른다. 시간대별이면 그 시각, 최대 침수심이면 침수면적이 가장 넓은 시각.
+  // 화면 표현용 (방향·빠르기 비교). 계산은 pipeline/river_flow.py, pipeline/flow2d_web.py
   var SPEEDUP = 100;
-  var N_FLOW = 300;
+  var N_FLOW = 260; // 하천
+  var N_FLOOD = 520; // 범람 구역
+  var VMAX = 4; // 물결 무늬용 유속 부호화 범위 (m/s)
 
   function lowerBound(a, v) {
     var lo = 0,
@@ -518,11 +674,26 @@
     return [(p.x - p.ty * off) / this.kx, (p.y + p.tx * off) / this.ky];
   };
 
+  function peakFrame() {
+    var a = S.frames && S.frames.area_2d_km2;
+    if (!a || !a.length) return 0;
+    var best = 0;
+    for (var i = 1; i < a.length; i++) if (a[i] > a[best]) best = i;
+    return best;
+  }
+  function flowFrame() {
+    return S.mode === "time" && S.frames ? S.frame : S.peak;
+  }
+  function groundHeight(lon, lat) {
+    var h = S.viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(lon, lat));
+    return h === undefined ? null : h;
+  }
+
+  // ---- 하천
   function spawn(m) {
     var life = 3 + Math.random() * 4;
     return { s: Math.random() * m.length, lane: (Math.random() * 2 - 1) * 0.85, age: Math.random() * life, life: life, h: null };
   }
-
   function setFlowData(d) {
     var lines = S.flow && S.flow.lines;
     if (!d) {
@@ -537,45 +708,151 @@
     if (S.viewer) ensureFlowLines();
   }
 
-  function ensureFlowLines() {
-    if (!S.flow || !S.viewer || S.flow.lines) return;
+  // ---- 범람 구역 (flow2d.bin: Uint32 격자 번호[n] + 시각마다 Int8 동[n]·북[n], −128 = 마름)
+  function loadFlow2d(item) {
+    getJSON(fileUrl(item, "flow2d.json"))
+      .then(function (meta) {
+        return fetch(fileUrl(item, meta.file || "flow2d.bin", meta.generated_at))
+          .then(function (r) {
+            if (!r.ok) throw new Error("flow2d.bin " + r.status);
+            return r.arrayBuffer();
+          })
+          .then(function (buf) {
+            if (S.cur === item) setFlow2d(meta, buf);
+          });
+      })
+      .catch(function () {});
+  }
+  function setFlow2d(meta, buf) {
+    if (!meta || !buf) {
+      S.f2 = null;
+      if (S.flood) S.flood.ps = [];
+      if (S.water) S.water.flowKey = null;
+      if (S.ready) renderControls();
+      return;
+    }
+    var n = meta.n,
+      g = meta.grid;
+    if (buf.byteLength < 4 * n + 2 * n * meta.count) return;
+    var idx = new Uint32Array(buf, 0, n);
+    var q = new Int8Array(buf, 4 * n);
+    var lut = new Int32Array(g.width * g.height);
+    lut.fill(-1);
+    for (var k = 0; k < n; k++) lut[idx[k]] = k;
+    var lat0 = g.north - (g.height * g.dlat) / 2;
+    S.f2 = { meta: meta, n: n, g: g, idx: idx, q: q, lut: lut, wet: {}, kx: 111320 * Math.cos((lat0 * Math.PI) / 180), ky: 110540 };
+    if (!S.flood) S.flood = { ps: [], lines: null, rr: 0 };
+    S.flood.ps = [];
+    if (S.water) S.water.flowKey = null;
+    if (S.viewer) ensureFlowLines();
+    renderControls();
+    if (S.viewer) S.viewer.scene.requestRender();
+  }
+  function f2t(t) {
+    return Math.max(0, Math.min(S.f2.meta.count - 1, t));
+  }
+  function f2Vel(t, lon, lat) {
+    var F = S.f2,
+      g = F.g;
+    var c = Math.floor((lon - g.west) / g.dlon),
+      r = Math.floor((g.north - lat) / g.dlat);
+    if (c < 0 || r < 0 || c >= g.width || r >= g.height) return null;
+    var k = F.lut[r * g.width + c];
+    if (k < 0) return null;
+    var base = f2t(t) * 2 * F.n;
+    var u = F.q[base + k];
+    if (u === -128) return null;
+    return [u * F.meta.scale_ms, F.q[base + F.n + k] * F.meta.scale_ms];
+  }
+  function f2Wet(t) {
+    var F = S.f2;
+    t = f2t(t);
+    if (F.wet[t]) return F.wet[t];
+    var out = [],
+      base = t * 2 * F.n,
+      s = F.meta.scale_ms;
+    for (var k = 0; k < F.n; k++) {
+      var u = F.q[base + k];
+      if (u === -128) continue;
+      var v = F.q[base + F.n + k];
+      if ((u * u + v * v) * s * s > 0.0036) out.push(k); // 0.06 m/s 넘는 곳만
+    }
+    F.wet[t] = out;
+    return out;
+  }
+  function floodSpawn(t, aged) {
+    var F = S.f2,
+      g = F.g,
+      list = f2Wet(t);
+    if (!list.length) return null;
+    var k = list[0];
+    for (var tries = 0; tries < 6; tries++) {
+      // 빠른 곳에 조금 더 많이
+      k = list[Math.floor(Math.random() * list.length)];
+      var base = f2t(t) * 2 * F.n;
+      var sp = Math.hypot(F.q[base + k], F.q[base + F.n + k]) * F.meta.scale_ms;
+      if (Math.random() < 0.2 + sp / 0.8) break;
+    }
+    var gi = F.idx[k],
+      r = Math.floor(gi / g.width),
+      c = gi - r * g.width;
+    var lon = g.west + (c + Math.random()) * g.dlon,
+      lat = g.north - (r + Math.random()) * g.dlat;
+    var life = 2 + Math.random() * 3;
+    return { lon: lon, lat: lat, age: aged ? Math.random() * life : 0, life: life, h: groundHeight(lon, lat) };
+  }
+
+  function makeLines(n, width) {
     var col = new Cesium.PolylineCollection();
-    for (var i = 0; i < N_FLOW; i++) {
+    for (var i = 0; i < n; i++) {
       col.add({
         positions: [Cesium.Cartesian3.fromDegrees(0, 0, 0), Cesium.Cartesian3.fromDegrees(0, 0, 1)],
-        width: 2,
+        width: width,
         show: false,
         material: Cesium.Material.fromType("Color", { color: new Cesium.Color(1, 1, 1, 0.85) }),
       });
     }
     S.viewer.scene.primitives.add(col);
-    S.flow.lines = col;
+    return col;
+  }
+  function ensureFlowLines() {
+    if (!S.viewer) return;
+    if (S.flow && !S.flow.lines) S.flow.lines = makeLines(N_FLOW, 2);
+    if (S.flood && !S.flood.lines) S.flood.lines = makeLines(N_FLOOD, 1.6);
+    if (S.loopOn) return;
+    S.loopOn = true;
     var last = performance.now();
     S.viewer.scene.preRender.addEventListener(function () {
       var now = performance.now();
       var dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      updateFlow(dt);
+      try {
+        if (S.bldStyle && $("bld").checked) styleBuildings();
+        updateFlow(dt);
+        updateFlood(dt);
+        updateWater(now);
+      } catch (e) {
+        console.warn("[3D] 흐름 갱신 오류", e);
+      }
     });
   }
 
   function updateFlow(dt) {
     var F = S.flow;
     if (!F || !F.lines) return;
-    var on = S.mode === "time" && !!S.frames && !!F.model && $("flow").checked;
+    var on = S.flowOn && !!F.model;
     F.lines.show = on;
     if (!on) return;
     S.viewer.scene.requestRender(); // 화면이 바뀔 때만 그리는 설정이어도 흐름이 보이는 동안은 계속 그린다
     var m = F.model,
-      t = S.frame,
-      globe = S.viewer.scene.globe;
-    var d = m.d;
-    // 지형 높이는 한 번에 몇 개씩만 다시 구한다 (getHeight는 무거움)
+      t = flowFrame(),
+      d = m.d;
     for (var k = 0; k < 30; k++) {
+      // 지형 높이는 한 번에 몇 개씩만 다시 구한다 (getHeight는 무거움)
       var q = F.ps[F.rr++ % F.ps.length];
       var ll = m.lonLat(q.s, 0);
-      var h = globe.getHeight(Cesium.Cartographic.fromDegrees(ll[0], ll[1]));
-      if (h !== undefined) q.h = h;
+      var h = groundHeight(ll[0], ll[1]);
+      if (h !== null) q.h = h;
     }
     for (var i = 0; i < F.ps.length; i++) {
       var p = F.ps[i];
@@ -601,6 +878,249 @@
       line.material.uniforms.color.alpha = 0.9 * Math.min(1, kk * 4, (1 - kk) * 4) * Math.min(1, 0.35 + v / 4);
       line.show = true;
     }
+  }
+
+  function updateFlood(dt) {
+    var F = S.flood;
+    if (!F || !F.lines) return;
+    var on = S.flowOn && !!S.f2;
+    F.lines.show = on;
+    if (!on) return;
+    S.viewer.scene.requestRender();
+    var t = flowFrame();
+    if (F.t !== t) {
+      // 시각이 바뀌면 그 시각 젖은 곳에서 새로 뿌린다
+      F.t = t;
+      F.ps = [];
+    }
+    while (F.ps.length < N_FLOOD) {
+      var np = floodSpawn(t, true);
+      if (!np) break;
+      F.ps.push(np);
+    }
+    var Z = S.f2;
+    for (var k = 0; k < 40 && F.ps.length; k++) {
+      var q = F.ps[F.rr++ % F.ps.length];
+      var h = groundHeight(q.lon, q.lat);
+      if (h !== null) q.h = h;
+    }
+    for (var i = 0; i < N_FLOOD; i++) {
+      var line = F.lines.get(i);
+      var p = F.ps[i];
+      if (!p) {
+        line.show = false;
+        continue;
+      }
+      var v = f2Vel(t, p.lon, p.lat);
+      p.age += dt;
+      if (!v || p.age > p.life) {
+        p = F.ps[i] = floodSpawn(t, false);
+        if (!p) {
+          line.show = false;
+          continue;
+        }
+        v = f2Vel(t, p.lon, p.lat);
+        if (!v) {
+          line.show = false;
+          continue;
+        }
+      }
+      p.lon += (v[0] * dt * SPEEDUP) / Z.kx;
+      p.lat += (v[1] * dt * SPEEDUP) / Z.ky;
+      var sp = Math.hypot(v[0], v[1]);
+      if (sp < 0.03 || p.h === null) {
+        line.show = false;
+        continue;
+      }
+      var len = Math.max(6, Math.min(90, sp * SPEEDUP * 0.22));
+      var tl = p.lon - ((v[0] / sp) * len) / Z.kx,
+        tt = p.lat - ((v[1] / sp) * len) / Z.ky;
+      line.positions = [Cesium.Cartesian3.fromDegrees(tl, tt, p.h + 2), Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h + 2)];
+      var kk = p.age / p.life;
+      line.material.uniforms.color.alpha = 0.85 * Math.min(1, kk * 4, (1 - kk) * 4) * Math.min(1, 0.3 + sp / 1.5);
+      line.show = true;
+    }
+  }
+
+  // ---- 시간대별 물 표면: 침수심 이미지(등급 색) 위에 그 시각 유속 방향으로 흐르는 물결 무늬 (flow map 기법)
+  // 유속은 침수심 이미지 범위를 덮는 작은 캔버스(약 25 m 화소)에 R=동, G=북 (128 = 0, ±VMAX m/s)으로 넣는다.
+  // 그리기 오류가 나면 guardRender가 걷어내고 예전 방식(이미지 덮기)으로 돌아간다.
+  var WATER_SRC = [
+    "uniform sampler2D depthImg;",
+    "uniform sampler2D flowImg;",
+    "uniform vec2 texSize;",
+    "uniform vec2 scale;",
+    "uniform float time;",
+    "uniform float advect;",
+    "uniform float opacity;",
+    "float hnHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
+    "float hnNoise(vec2 p) {",
+    "  vec2 i = floor(p); vec2 f = fract(p);",
+    "  vec2 u = f * f * (3.0 - 2.0 * f);",
+    "  float a = hnHash(i), b = hnHash(i + vec2(1.0, 0.0)), c = hnHash(i + vec2(0.0, 1.0)), d = hnHash(i + vec2(1.0, 1.0));",
+    "  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;",
+    "}",
+    "float hnRipple(vec2 q) { return hnNoise(q) * 0.65 + hnNoise(q * 2.7 + 3.1) * 0.35; }",
+    "czm_material czm_getMaterial(czm_materialInput materialInput) {",
+    "  czm_material m = czm_getDefaultMaterial(materialInput);",
+    "  vec2 st = materialInput.st;",
+    "  vec4 c = texture2D(depthImg, (floor(st * texSize) + 0.5) / texSize);", // 화소 가운데만 읽어 등급 색이 섞이지 않게
+    "  if (c.a < 0.02) { m.alpha = 0.0; return m; }",
+    "  vec2 vel = (texture2D(flowImg, st).rg * 255.0 - 128.0) / 127.0;",
+    "  vec2 p = st * scale;",
+    "  float ph0 = fract(time * 0.2);",
+    "  float ph1 = fract(time * 0.2 + 0.5);",
+    "  float w = abs(ph0 - 0.5) * 2.0;",
+    "  float n = mix(hnRipple(p - vel * ph0 * advect), hnRipple(p - vel * ph1 * advect + vec2(17.3, 5.1)), w);",
+    "  float sp = clamp(length(vel) * 2.5, 0.0, 1.0);",
+    "  float crest = smoothstep(0.3, 0.85, n);",
+    "  vec3 col = c.rgb * (0.94 + 0.08 * n);",
+    "  col = mix(col, vec3(0.93, 0.97, 1.0), crest * (0.10 + 0.35 * sp));",
+    "  m.diffuse = col;",
+    "  m.alpha = c.a * opacity;",
+    "  return m;",
+    "}",
+  ].join("\n");
+  var RIPPLE_M = 12; // 물결 한 무늬 크기 (m)
+  var RIPPLE_SPEED = 15; // 물결이 실제 유속보다 몇 배 빠르게 움직일지
+
+  function ensureWater() {
+    if (S.water) return S.water;
+    if (S.water === false || !S.viewer || !S.frames) return null;
+    try {
+      if (!Cesium.GroundPrimitive.supportsMaterials(S.viewer.scene)) {
+        S.water = false;
+        return null;
+      }
+      var fr = S.frames,
+        b = fr.bounds,
+        px = fr.pixel_m || 4;
+      var fw = Math.max(2, Math.ceil((fr.width * px) / 25)),
+        fh = Math.max(2, Math.ceil((fr.height * px) / 25));
+      var mat = new Cesium.Material({
+        translucent: true,
+        fabric: {
+          type: "HinnamnoWater",
+          uniforms: {
+            depthImg: frameUrl(S.frame),
+            flowImg: neutralCanvas(fw, fh),
+            texSize: new Cesium.Cartesian2(fr.width, fr.height),
+            scale: new Cesium.Cartesian2((fr.width * px) / RIPPLE_M, (fr.height * px) / RIPPLE_M),
+            time: 0,
+            advect: (VMAX * RIPPLE_SPEED * 5) / RIPPLE_M, // 한 주기(5초) 동안 무늬 이동량 = 유속 × RIPPLE_SPEED × 5 s
+            opacity: 0.92,
+          },
+          source: WATER_SRC,
+        },
+      });
+      var prim = new Cesium.GroundPrimitive({
+        geometryInstances: new Cesium.GeometryInstance({
+          geometry: new Cesium.RectangleGeometry({ rectangle: rect(b), vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT }),
+        }),
+        appearance: new Cesium.EllipsoidSurfaceAppearance({ aboveGround: false, material: mat }),
+        classificationType: Cesium.ClassificationType.TERRAIN,
+        show: false,
+      });
+      S.viewer.scene.groundPrimitives.add(prim);
+      S.water = { prim: prim, mat: mat, fw: fw, fh: fh, bounds: b, frame: -1, flowKey: null };
+      return S.water;
+    } catch (e) {
+      console.warn("[3D] 물 표면을 만들 수 없음 — 이미지 덮기로", e);
+      S.water = false;
+      return null;
+    }
+  }
+  function dropWater() {
+    if (S.water && S.viewer) {
+      try {
+        S.viewer.scene.groundPrimitives.remove(S.water.prim);
+      } catch (e) {}
+    }
+    if (S.water) S.water = null;
+  }
+  function neutralCanvas(w, h) {
+    var cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    var ctx = cv.getContext("2d");
+    ctx.fillStyle = "rgb(128,128,0)";
+    ctx.fillRect(0, 0, w, h);
+    return cv;
+  }
+  function setWaterFrame(i) {
+    var W = S.water;
+    if (W.frame !== i) {
+      W.mat.uniforms.depthImg = frameUrl(i);
+      W.frame = i;
+    }
+    W.prim.show = S.mode === "time";
+    updateWaterFlow(i);
+    S.viewer.scene.requestRender();
+  }
+  // 그 시각 유속 캔버스: 범람 구역(flow2d) + 하천(river_flow, 중심선 방향 × 단면 평균 유속, 수면 폭 안)
+  function updateWaterFlow(t) {
+    var W = S.water;
+    var key = t + "|" + (S.f2 ? 1 : 0) + "|" + (S.flow && S.flow.model ? 1 : 0);
+    if (!W || W.flowKey === key) return;
+    W.flowKey = key;
+    var fw = W.fw,
+      fh = W.fh,
+      b = W.bounds;
+    var cv = document.createElement("canvas");
+    cv.width = fw;
+    cv.height = fh;
+    var ctx = cv.getContext("2d");
+    var img = ctx.createImageData(fw, fh);
+    var D = img.data;
+    for (var j = 0; j < D.length; j += 4) {
+      D[j] = 128;
+      D[j + 1] = 128;
+      D[j + 3] = 255;
+    }
+    function put(lon, lat, u, v) {
+      var c = Math.floor(((lon - b[0]) / (b[2] - b[0])) * fw),
+        r = Math.floor(((b[3] - lat) / (b[3] - b[1])) * fh);
+      if (c < 0 || r < 0 || c >= fw || r >= fh) return;
+      var o = (r * fw + c) * 4;
+      D[o] = Math.max(1, Math.min(255, Math.round(128 + (u / VMAX) * 127)));
+      D[o + 1] = Math.max(1, Math.min(255, Math.round(128 + (v / VMAX) * 127)));
+    }
+    if (S.f2) {
+      var F = S.f2,
+        g = F.g,
+        base = f2t(t) * 2 * F.n,
+        s = F.meta.scale_ms;
+      for (var k = 0; k < F.n; k++) {
+        var u = F.q[base + k];
+        if (u === -128) continue;
+        var gi = F.idx[k],
+          rr = Math.floor(gi / g.width),
+          cc = gi - rr * g.width;
+        put(g.west + (cc + 0.5) * g.dlon, g.north - (rr + 0.5) * g.dlat, u * s, F.q[base + F.n + k] * s);
+      }
+    }
+    if (S.flow && S.flow.model) {
+      var m = S.flow.model,
+        d = m.d;
+      for (var sx = 0; sx < m.length; sx += 8) {
+        var vel = m.interp(d.velocity_ms, sx, t);
+        var half = m.interp(d.top_width_m, sx, t) / 2;
+        if (!(vel > 0.02) || !(half > 1)) continue;
+        var at = m.at(sx);
+        for (var off = -half; off <= half; off += 8) {
+          var ll = m.lonLat(sx, off);
+          put(ll[0], ll[1], vel * at.tx, vel * at.ty);
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    W.mat.uniforms.flowImg = cv;
+  }
+  function updateWater(now) {
+    var W = S.water;
+    if (!W || !W.prim.show) return;
+    W.mat.uniforms.time = (now - S.t0) / 1000;
+    S.viewer.scene.requestRender(); // 물결이 움직이는 동안 계속 그린다
   }
 
   // ------------------------------------------------------------ 누른 자리 침수심 등급 (이미지 색으로)
@@ -721,8 +1241,16 @@
         view(b.getAttribute("data-view"));
       });
     });
-    $("flow").addEventListener("change", function () {
+    $("flowbtn").addEventListener("click", function () {
+      S.flowOn = !S.flowOn;
+      renderControls();
       if (S.viewer) S.viewer.scene.requestRender();
+    });
+    $("adm").addEventListener("change", function (e) {
+      setAdmin(e.target.checked);
+    });
+    $("names").addEventListener("change", function (e) {
+      setNames(e.target.checked);
     });
     $("bld").addEventListener("change", function (e) {
       setBuildings(e.target.checked);

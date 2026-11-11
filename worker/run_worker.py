@@ -31,7 +31,7 @@ from worker.supabase_rest import Supabase, SupabaseError, _ctype, load_env  # no
 
 BUCKET = "results"
 UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json",
-                "river.json", "river_flow.json")
+                "river.json", "river_flow.json", "flow2d.json", "flow2d.bin")
 LOG_KEEP = 8000           # DB에 남기는 로그 글자 수 (끝부분)
 
 
@@ -127,8 +127,10 @@ class Worker:
             try:                                        # 10분 침수심 이미지 (지도 시간 재생·3D)
                 from pipeline.frames_web import make_frames
 
-                fr = make_frames(res.hdf, res.terrain, out, sid, ver)
+                fr = make_frames(res.hdf, res.terrain, out, sid, ver, flow2d=True)
                 log(f"10분 침수심 이미지 {fr['count']}장 ({fr['bytes_total'] / 1e6:.1f} MB)")
+                f2 = fr.get("flow2d") or {}
+                log(f"범람 구역 흐름 자료 {f2.get('MB')} MB" if f2.get("ok") else f"범람 구역 흐름 실패 (이미지는 올림): {f2.get('error')}")
             except Exception as e:
                 log(f"침수심 이미지 실패 (최대 수심 지도는 올림): {type(e).__name__}: {e}")
             log("결과 파일 올리기", progress="결과 올리는 중")

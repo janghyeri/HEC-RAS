@@ -305,6 +305,79 @@ a {
   margin-left: 4px;
 }
 
+.v3-flowrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v3-toggle {
+  height: 36px;
+  padding: 0 14px 0 12px;
+  border: 1px solid var(--navy);
+  border-radius: 18px;
+  background: #ffffff;
+  color: var(--navy);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v3-toggle::before {
+  content: "";
+  width: 18px;
+  height: 10px;
+  flex: none;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #1c5cab 0 25%, #ffffff 25% 45%, #1c5cab 45% 62%, #ffffff 62% 80%, #1c5cab 80%);
+}
+
+.v3-toggle[aria-pressed="true"] {
+  background: var(--navy);
+  color: #ffffff;
+}
+
+.v3-toggle:disabled {
+  border-color: var(--line-strong);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.v3-flowinfo {
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-layers {
+  margin: 0;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.v3-layers legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.v3-layers label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v3-layers input {
+  accent-color: var(--navy);
+}
+
 .v3-pick {
   font-size: 13.5px;
   border: 1px solid var(--line-strong);

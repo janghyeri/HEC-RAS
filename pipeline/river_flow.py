@@ -11,6 +11,7 @@
 단순 값이라 수리 계산·KPI에는 쓰지 않는다.
 
 사용: python -m pipeline.river_flow --npz dump/river_S0-C.npz --out web/public/data/v1/S0-C/river_flow.json --scenario S0-C
+     python -m pipeline.river_flow --hdf <p03.hdf> --out <...>/river_flow.json --scenario run-1   (워커 PC, HDF에서 바로)
 """
 from __future__ import annotations
 
@@ -131,11 +132,27 @@ def write(npz: Path, out: Path, scenario: str) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--npz", required=True)
+    ap.add_argument("--npz", help="worker/dump_river_geom.py 출력")
+    ap.add_argument("--hdf", help="결과 HDF (npz 대신, h5py 필요)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--scenario", required=True)
     a = ap.parse_args()
-    print(json.dumps(write(Path(a.npz), Path(a.out), a.scenario), ensure_ascii=False))
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if a.npz:
+        print(json.dumps(write(Path(a.npz), out, a.scenario), ensure_ascii=False))
+        return
+    import shutil
+    import tempfile
+
+    from worker.dump_river_geom import dump_hdf
+
+    tmp = Path(tempfile.mkdtemp(prefix="riverflow_"))
+    try:                                   # Windows: npz는 build 안에서 with로 열고 닫는다 → 임시 폴더를 지울 수 있음
+        dump_hdf(a.scenario, Path(a.hdf), tmp)
+        print(json.dumps(write(tmp / f"river_{a.scenario}.npz", out, a.scenario), ensure_ascii=False))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -198,23 +198,11 @@ a:hover {
 }
 
 /* maplibre-gl.css의 .maplibregl-map { position: relative } 보다 우선하도록 선택자를 한 단계 높인다 */
-.stage > .map,
-.stage > .map-wrap,
-.map-wrap > .map {
+.stage > .map {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-/* 하천 흐름 표시 (흰 줄) — 지도 위, 버튼·카드 아래 */
-.flow-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
 }
 
 .map-loading {
@@ -2016,10 +2004,53 @@ a:hover {
   font-size: 12.5px;
 }
 
-.flow-key {
+/* 행정구역 이름 (지도 위 HTML 표지) — 누르기는 지도로 통과 */
+.adm-label {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  color: #ffffff;
+  text-shadow: 0 0 2px #17212b, 0 0 3px #17212b, 0 1px 2px rgba(23, 33, 43, 0.9);
+  white-space: nowrap;
+}
+
+.adm-label b {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.adm-label span {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #e6edf3;
+}
+
+.adm-sgg b {
+  font-size: 15px;
+}
+
+.swatch-admin {
   width: 18px;
-  height: 10px;
+  height: 0;
   flex: none;
+  border-top: 2px dashed #17212b;
+}
+
+.swatch-names {
+  width: 18px;
+  height: 12px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #17212b;
+  border: 1px solid #a9b4bf;
   border-radius: 2px;
-  background: linear-gradient(90deg, #1c5cab 0%, #1c5cab 30%, #ffffff 30%, #ffffff 45%, #1c5cab 45%, #1c5cab 65%, #ffffff 65%, #ffffff 80%, #1c5cab 80%);
+}
+
+.swatch-names::before {
+  content: "가";
 }

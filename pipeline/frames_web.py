@@ -220,8 +220,10 @@ def bbox_of(polys: list[np.ndarray], cutlines: list[np.ndarray] | None = None, p
 
 
 # ---------------------------------------------------------------- HEC-RAS 결과에서 (워커 PC)
-def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_version: str) -> dict:
-    """결과 HDF·지형으로 out/frames/ 를 만든다. out/meta.json이 있으면 파일 목록에 frames/를 더한다."""
+def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_version: str, flow2d: bool = False) -> dict:
+    """결과 HDF·지형으로 out/frames/ 를 만든다. out/meta.json이 있으면 파일 목록에 frames/를 더한다.
+
+    flow2d=True면 이미 읽은 결과·지형으로 범람 구역 흐름 자료(flow2d_web)도 만든다 — 실패해도 이미지는 그대로 (결과는 info["flow2d"])."""
     from worker.dump_river_geom import dump_hdf
 
     from .export_web import build_mesh
@@ -263,6 +265,15 @@ def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_ve
         meta.setdefault("files", {})["frames/"] = (f"10분 침수심 이미지 {info['count']}장 (경위도 격자, 화소 {STEP_M:g} m) — "
                                                   "시간 재생·3D 지면 덮기, 설명은 frames/frames.json")
         meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if flow2d:
+        from .flow2d_web import make_flow2d
+
+        try:
+            f2 = make_flow2d(hdf, terrain_tif, out, scenario, model_version,
+                             ctx={"plan": plan, "terrain": terrain, "mesh": mesh, "cell_id": cell_id})
+            info["flow2d"] = {"ok": True, "n": f2["n"], "MB": round(f2["bytes"] / 1e6, 2), "check": f2["check"]}
+        except Exception as e:
+            info["flow2d"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
     return info
 
 
