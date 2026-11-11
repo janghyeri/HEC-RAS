@@ -764,11 +764,15 @@
       getJSON(fileUrl(item, "river_flow.json"), { cache: "no-cache" }).catch(function () {
         return null;
       }),
+      getJSON(fileUrl(item, "frames2m/frames.json"), { cache: "no-cache" }).catch(function () {
+        return null;
+      }),
     ]).then(function (r) {
       if (S.cur !== item) return;
       S.tiles = r[0];
       S.frames = r[1];
       S.kpi = r[2];
+      S.frames2 = r[4] && r[4].count === (r[1] && r[1].count) ? r[4] : null; // 2 m 판 (3D 물 표면용)
       setFlowData(r[3]);
       if (!S.frames && S.mode === "time") S.mode = "max";
       if (S.frames) S.frame = Math.min(S.frame, S.frames.count - 1);
@@ -1366,19 +1370,30 @@
       return null;
     }
     try {
-      var fr = S.frames,
+      var fr = waterFrames(),
         b = fr.bounds,
         px = fr.pixel_m || 4;
       var fw = Math.max(2, Math.ceil((fr.width * px) / 25)),
         fh = Math.max(2, Math.ceil((fr.height * px) / 25));
-      var w = makeWater({ rect: b, img: frameUrl(S.frame), texW: fr.width, texH: fr.height, merc: null, animate: true, flowSize: [fw, fh], scaleM: [fr.width * px, fr.height * px] });
-      S.water = { prim: w.prim, mat: w.mat, fw: fw, fh: fh, bounds: b, frame: -1, flowKey: null };
+      var w = makeWater({ rect: b, img: waterFrameUrl(S.frame), texW: fr.width, texH: fr.height, merc: null, animate: true, flowSize: [fw, fh], scaleM: [fr.width * px, fr.height * px] });
+      S.water = { prim: w.prim, mat: w.mat, fw: fw, fh: fh, bounds: b, frame: -1, flowKey: null, src: fr };
       return S.water;
     } catch (e) {
       console.warn("[3D] 물 표면을 만들 수 없음 — 이미지 덮기로", e);
       S.water = false;
       return null;
     }
+  }
+
+  // 물 표면에 쓸 10분 이미지: 2 m 판이 있고 이 기기 텍스처 한도 안이면 그것, 아니면 4 m 판
+  function waterFrames() {
+    var f2 = S.frames2,
+      lim = (Cesium.ContextLimits && Cesium.ContextLimits.maximumTextureSize) || 4096;
+    return f2 && f2.width <= lim && f2.height <= lim ? f2 : S.frames;
+  }
+  function waterFrameUrl(i) {
+    var fr = waterFrames();
+    return fileUrl(S.cur, fr.files.replace("{i:03d}", String(i).padStart(3, "0")), fr.generated_at);
   }
 
   // 최대 침수심 물: 2D 지도 타일(가장 자세한 단계)을 이어 붙인 텍스처. 다 불러오기 전에는 영상 레이어로 보인다
@@ -1492,7 +1507,7 @@
   function setWaterFrame(i) {
     var W = S.water;
     if (W.frame !== i) {
-      W.mat.uniforms.depthImg = frameUrl(i);
+      W.mat.uniforms.depthImg = waterFrameUrl(i);
       W.frame = i;
     }
     W.prim.show = S.mode === "time";

@@ -3,6 +3,7 @@
 출력 (<out> = 시나리오 웹 폴더, 예: web/public/data/v1/S0-C)
   frames/000.png … frames/069.png   지도 출력 시각마다 한 장. 경위도 격자(EPSG:4326, 화소 약 4 m)
   frames/frames.json                시각·범위·크기·화소 크기·프레임별 침수면적
+  frames2m/…                        같은 내용을 화소 2 m로 (3D 화면이 가까이 볼 때 쓰는 선명한 판, --step 2 --subdir frames2m)
 
 계산
   - 2D: 화소마다 그 자리 셀의 그 시각 수위 − 2 m 지형 (최대 수심 지도와 같은 방식, raster_depth.depth_raster)
@@ -159,9 +160,9 @@ def _palette_image(depth: np.ndarray) -> Image.Image:
 
 def write_frames(sampler: FrameSampler, ws_frames: np.ndarray, times: list[str], out: Path,
                  xs_ws_frames: np.ndarray | None = None, area_ref_km2: list[float] | None = None,
-                 meta: dict | None = None) -> dict:
-    """ws_frames (시각 × 셀) → out/frames/*.png + frames.json. area_ref_km2: 셀 표고-체적 표 기준 프레임별 침수면적."""
-    fdir = out / "frames"
+                 meta: dict | None = None, subdir: str = "frames", step_m: float = STEP_M) -> dict:
+    """ws_frames (시각 × 셀) → out/<subdir>/*.png + frames.json. area_ref_km2: 셀 표고-체적 표 기준 프레임별 침수면적."""
+    fdir = out / subdir
     if fdir.exists():
         shutil.rmtree(fdir)
     fdir.mkdir(parents=True)
@@ -187,12 +188,12 @@ def write_frames(sampler: FrameSampler, ws_frames: np.ndarray, times: list[str],
         **(meta or {}),
         "count": int(ws_frames.shape[0]),
         "times": times,
-        "files": "frames/{i:03d}.png",
+        "files": subdir + "/{i:03d}.png",
         "crs": "EPSG:4326 (경위도 격자)",
         "bounds": [round(v, 8) for v in g["bounds"]],          # 서, 남, 동, 북
         "width": g["width"],
         "height": g["height"],
-        "pixel_m": STEP_M,
+        "pixel_m": step_m,
         "min_depth_m": MIN_DEPTH,
         "classes": [{"lo": lo, "hi": hi if hi < 90 else None, "rgba": list(c)} for lo, hi, c in DEPTH_CLASSES],
         "includes_river": xs_ws_frames is not None,
@@ -220,7 +221,8 @@ def bbox_of(polys: list[np.ndarray], cutlines: list[np.ndarray] | None = None, p
 
 
 # ---------------------------------------------------------------- HEC-RAS 결과에서 (워커 PC)
-def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_version: str, flow2d: bool = False) -> dict:
+def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_version: str, flow2d: bool = False,
+                step_m: float = STEP_M, subdir: str = "frames", extra_steps: tuple = ()) -> dict:
     """결과 HDF·지형으로 out/frames/ 를 만든다. out/meta.json이 있으면 파일 목록에 frames/를 더한다.
 
     flow2d=True면 이미 읽은 결과·지형으로 범람 구역 흐름 자료(flow2d_web)도 만든다 — 실패해도 이미지는 그대로 (결과는 info["flow2d"])."""
@@ -250,7 +252,7 @@ def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_ve
     if xs_ws.shape[0] != ws_frames.shape[0]:
         raise ValueError(f"하천 단면 시각 수 {xs_ws.shape[0]} ≠ 2D 출력 시각 수 {ws_frames.shape[0]}")
     bbox = bbox_of(mesh["polygons"], rv["cut"])
-    grid = lonlat_grid(bbox)
+    grid = lonlat_grid(bbox, step_m)
     sampler = FrameSampler(terrain.z, terrain.x0, terrain.y0, terrain.dx, terrain.dy, cell_id, grid,
                            {"cut": rv["cut"], "bed": rv["bed"], "areas2d": rv["areas2d"]})
     ref = None
@@ -258,12 +260,24 @@ def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_ve
     if ts.exists():
         ref = json.loads(ts.read_text(encoding="utf-8")).get("inundation_area_ge_0.1m_km2")
     info = write_frames(sampler, ws_frames, _iso_times(plan.times), out, xs_ws, ref,
-                        {"model_version": model_version, "scenario_id": scenario})
+                        {"model_version": model_version, "scenario_id": scenario}, subdir, step_m)
+    # 더 자세한 판 (예: (2.0, "frames2m")) — 같은 결과·지형으로 화소만 바꿔 한 번 더
+    extra = []
+    for st, sd in extra_steps:
+        g2 = lonlat_grid(bbox, st)
+        sm2 = FrameSampler(terrain.z, terrain.x0, terrain.y0, terrain.dx, terrain.dy, cell_id, g2,
+                           {"cut": rv["cut"], "bed": rv["bed"], "areas2d": rv["areas2d"]})
+        i2 = write_frames(sm2, ws_frames, _iso_times(plan.times), out, xs_ws, ref,
+                          {"model_version": model_version, "scenario_id": scenario}, sd, st)
+        extra.append((sd, i2))
     meta_p = out / "meta.json"
     if meta_p.exists():
         meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        meta.setdefault("files", {})["frames/"] = (f"10분 침수심 이미지 {info['count']}장 (경위도 격자, 화소 {STEP_M:g} m) — "
-                                                  "시간 재생·3D 지면 덮기, 설명은 frames/frames.json")
+        meta.setdefault("files", {})[subdir + "/"] = (f"10분 침수심 이미지 {info['count']}장 (경위도 격자, 화소 {step_m:g} m) — "
+                                                     f"시간 재생·3D 지면 덮기, 설명은 {subdir}/frames.json")
+        for sd, i2 in extra:
+            meta["files"][sd + "/"] = (f"10분 침수심 이미지 {i2['count']}장 (화소 {i2['pixel_m']:g} m, 3D 가까이 볼 때) — "
+                                       f"설명은 {sd}/frames.json")
         meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     if flow2d:
         from .flow2d_web import make_flow2d
@@ -274,6 +288,8 @@ def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_ve
             info["flow2d"] = {"ok": True, "n": f2["n"], "MB": round(f2["bytes"] / 1e6, 2), "check": f2["check"]}
         except Exception as e:
             info["flow2d"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    info["extra"] = {sd: {"count": i2["count"], "MB": round(i2["bytes_total"] / 1e6, 2), "size": [i2["width"], i2["height"]]}
+                     for sd, i2 in extra}
     return info
 
 
@@ -299,7 +315,9 @@ def main():
     ap.add_argument("--out", help="시나리오 웹 폴더 (frames/를 여기에 만든다)")
     ap.add_argument("--job", action="append", default=[], help="시나리오=HDF (여러 번), --out-root와 함께")
     ap.add_argument("--out-root", help="--job 출력 위치: <out-root>/<버전>/<시나리오>/frames")
-    ap.add_argument("--zip", action="store_true", help="시나리오마다 <out-root>/<시나리오>_frames.zip도 만든다")
+    ap.add_argument("--zip", action="store_true", help="시나리오마다 <out-root>/<시나리오>_<subdir>.zip도 만든다")
+    ap.add_argument("--step", type=float, default=STEP_M, help="화소 크기 m (기본 4)")
+    ap.add_argument("--subdir", default="frames", help="출력 폴더 이름 (기본 frames, 2 m 판은 frames2m)")
     a = ap.parse_args()
     jobs = []
     if a.hdf:
@@ -312,13 +330,13 @@ def main():
         print(f"[{datetime.now():%H:%M:%S}] {sid}: {h}", flush=True)
         try:
             out.mkdir(parents=True, exist_ok=True)
-            info = make_frames(h, Path(a.terrain), out, sid, a.model_version)
+            info = make_frames(h, Path(a.terrain), out, sid, a.model_version, step_m=a.step, subdir=a.subdir)
             line = {"scenario": sid, "ok": True, "count": info["count"], "size": [info["width"], info["height"]],
                     "MB": round(info["bytes_total"] / 1e6, 2), "check": info["check"],
                     "peak_area_2d_km2": max(info["area_2d_km2"])}
             if a.zip and a.out_root:
-                zp = Path(a.out_root) / f"{sid}_frames.zip"
-                _zip_dir(out / "frames", zp)
+                zp = Path(a.out_root) / f"{sid}_{a.subdir}.zip"
+                _zip_dir(out / a.subdir, zp)
                 line["zip"] = str(zp)
         except Exception as e:  # 한 시나리오가 실패해도 나머지는 계속
             line = {"scenario": sid, "ok": False, "error": f"{type(e).__name__}: {e}"}

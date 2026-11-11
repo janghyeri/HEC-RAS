@@ -127,7 +127,7 @@ class Worker:
             try:                                        # 10분 침수심 이미지 (지도 시간 재생·3D)
                 from pipeline.frames_web import make_frames
 
-                fr = make_frames(res.hdf, res.terrain, out, sid, ver, flow2d=True)
+                fr = make_frames(res.hdf, res.terrain, out, sid, ver, flow2d=True, extra_steps=((2.0, "frames2m"),))
                 log(f"10분 침수심 이미지 {fr['count']}장 ({fr['bytes_total'] / 1e6:.1f} MB)")
                 f2 = fr.get("flow2d") or {}
                 log(f"범람 구역 흐름 자료 {f2.get('MB')} MB" if f2.get("ok") else f"범람 구역 흐름 실패 (이미지는 올림): {f2.get('error')}")
@@ -141,8 +141,9 @@ class Worker:
                     self.sb.upload(BUCKET, f"{prefix}/{f}", p.read_bytes(), _ctype(p))
                     n += 1
             n += self.sb.upload_dir(BUCKET, f"{prefix}/tiles", out / "tiles", log=log)
-            if (out / "frames" / "frames.json").exists():
-                n += self.sb.upload_dir(BUCKET, f"{prefix}/frames", out / "frames", log=log)
+            for sub in ("frames", "frames2m"):            # 10분 침수심 이미지 (4 m, 3D 가까이 볼 때 2 m)
+                if (out / sub / "frames.json").exists():
+                    n += self.sb.upload_dir(BUCKET, f"{prefix}/{sub}", out / sub, log=log)
             tasks = _tasks(res.run.get("compute_messages"))
             self.sb.update("runs", {"id": rid}, {
                 "status": "done", "finished_at": now_iso(), "progress": "완료", "kpi": kpi,
