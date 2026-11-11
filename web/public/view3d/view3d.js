@@ -176,6 +176,7 @@
       };
       vw.ws3dInitCallBack = onReady;
       S.map = new vw.Map();
+      window.__view3d = S; // 확인용 (브라우저 콘솔에서 지도 상태 보기)
       S.map.setOption(opts);
       S.map.setMapId("vmap");
       S.map.start();
