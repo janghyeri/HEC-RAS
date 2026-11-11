@@ -128,6 +128,7 @@
   "kpi.json": "핵심 지표",
   "timeseries.json": "시계열",
   "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ) — 2D 셀 수심 + 하천(1D) 구간 수면, 설명은 tiles/tiles.json",
-  "river.json": "냉천 1D 단면 위치·하상·제방 높이·최대 수위 (지도에서 하천을 누를 때)"
+  "river.json": "냉천 1D 단면 위치·하상·제방 높이·최대 수위 (지도에서 하천을 누를 때)",
+  "frames/": "10분 침수심 이미지 70장 (경위도 격자, 화소 4 m) — 시간 재생·3D 지면 덮기, 설명은 frames/frames.json"
  }
 }
