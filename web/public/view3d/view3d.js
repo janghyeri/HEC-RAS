@@ -164,7 +164,7 @@
       (function tilt() {
         if (touched) return;
         var h = S.viewer.camera.positionCartographic.height;
-        if (n === 0 || h > 4000) view("tilt");
+        if (n === 0 || h > 3000) view("tilt");
         if (++n < 8) setTimeout(tilt, 2500);
       })();
     }
@@ -208,10 +208,12 @@
         duration: 1.6,
       });
     } else {
-      // 남쪽에서 북쪽을 비스듬히 (높이 2.2 km, 아래로 32°)
+      // 남쪽에서 북쪽을 비스듬히 (높이 1.2 km, 아래로 30°). 브이월드 건물(흰 상자)은 카메라가 약 1.6 km보다 낮을 때만 보인다
+      var h = 1200;
+      var back = h / Math.tan(Cesium.Math.toRadians(30)) / 111000; // 바라보는 곳에서 남쪽으로 물러난 거리 (도)
       cam.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(c[0], c[1] - 0.031, 2200),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-32), roll: 0 },
+        destination: Cesium.Cartesian3.fromDegrees(c[0], c[1] - back, h),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-30), roll: 0 },
         duration: 1.6,
       });
     }
