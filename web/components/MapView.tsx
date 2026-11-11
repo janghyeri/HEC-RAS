@@ -38,8 +38,6 @@ interface Props {
 }
 
 const ADMIN_URL = "/data/admin/boundaries.geojson";
-const ADMIN_ATTR =
-  '행정구역: <a href="https://sgis.kostat.go.kr" target="_blank" rel="noreferrer">통계청 SGIS</a> 행정동 경계(2022-07, 공공누리 제1유형)·<a href="https://github.com/vuski/admdongkor" target="_blank" rel="noreferrer">vuski/admdongkor</a> 가공(CC BY 4.0)';
 const ADMIN_LAYERS = ["admin-emd-casing", "admin-emd", "admin-sgg-casing", "admin-sgg"];
 const EMD_MIN_ZOOM = 12.5; // 이보다 가까우면 읍면동 이름, 멀면 시군구 이름
 
@@ -156,7 +154,7 @@ export default function MapView(props: Props) {
           }
         }
         // 행정구역: 시군구 = 흰 테두리 + 진한 선, 같은 시군구 안 읍면동 = 흰 점선 (수심 파랑과 겹치지 않게 무채색)
-        map.addSource("admin", { type: "geojson", data: absoluteUrl(ADMIN_URL), attribution: ADMIN_ATTR });
+        map.addSource("admin", { type: "geojson", data: absoluteUrl(ADMIN_URL) }); // 출처는 왼쪽 패널 아래에 (지도 구석 표기는 길어서 가림)
         const isLevel = (lv: string) => ["all", ["==", ["get", "kind"], "boundary"], ["==", ["get", "level"], lv]] as never;
         map.addLayer({ id: "admin-emd-casing", type: "line", source: "admin", filter: isLevel("emd"),
           paint: { "line-color": "#17212b", "line-opacity": 0.35, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 16, 3.5] } });

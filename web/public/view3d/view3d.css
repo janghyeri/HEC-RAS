@@ -322,15 +322,8 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.v3-toggle::before {
-  content: "";
-  width: 18px;
-  height: 10px;
   flex: none;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #1c5cab 0 25%, #ffffff 25% 45%, #1c5cab 45% 62%, #ffffff 62% 80%, #1c5cab 80%);
+  white-space: nowrap;
 }
 
 .v3-toggle[aria-pressed="true"] {

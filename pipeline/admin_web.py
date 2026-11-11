@@ -23,6 +23,9 @@ from collections import defaultdict
 from pathlib import Path
 
 BBOX = (129.22, 35.83, 129.62, 36.14)       # 서, 남, 동, 북 — 냉천 모형 범위보다 넉넉히 (포항 남·북구, 경주 일부)
+# 이름 자리를 고를 때 우선하는 범위 — 침수 이미지 범위(frames.json bounds) + 약 1 km. 동이 크면 이름이 침수 구역에서 멀리
+# 떨어져 화면에 안 보이므로, 이 범위와 겹치는 동은 겹치는 부분 안에 이름을 둔다
+FOCUS = (129.378, 35.891, 129.436, 36.021)
 SOURCE = ("통계청 통계지리정보서비스(SGIS) 행정동 경계(2022-07-01 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료 "
           "(CC BY 4.0, https://github.com/vuski/admdongkor)")
 
@@ -84,6 +87,31 @@ def label_point(poly, n: int = 24) -> tuple[float, float]:
     return best
 
 
+def clip_ring(ring, box):
+    """다각형 고리를 사각형으로 자른다 (Sutherland–Hodgman). 닫힌 고리를 돌려준다 (없으면 빈 목록)."""
+    w, s_, e, n = box
+    pts = ring[:-1] if ring[0] == ring[-1] else ring
+    for inside_fn, cut in (
+        (lambda p: p[0] >= w, lambda a, b: (w, a[1] + (b[1] - a[1]) * (w - a[0]) / (b[0] - a[0]))),
+        (lambda p: p[0] <= e, lambda a, b: (e, a[1] + (b[1] - a[1]) * (e - a[0]) / (b[0] - a[0]))),
+        (lambda p: p[1] >= s_, lambda a, b: (a[0] + (b[0] - a[0]) * (s_ - a[1]) / (b[1] - a[1]), s_)),
+        (lambda p: p[1] <= n, lambda a, b: (a[0] + (b[0] - a[0]) * (n - a[1]) / (b[1] - a[1]), n)),
+    ):
+        out = []
+        for i, cur in enumerate(pts):
+            prev = pts[i - 1]
+            if inside_fn(cur):
+                if not inside_fn(prev):
+                    out.append(cut(prev, cur))
+                out.append(cur)
+            elif inside_fn(prev):
+                out.append(cut(prev, cur))
+        pts = out
+        if not pts:
+            return []
+    return [list(p) for p in pts] + [list(pts[0])]
+
+
 def chains(segs: list[tuple]) -> list[list]:
     """선분 목록 → 이어진 꺾은선들."""
     adj = defaultdict(list)
@@ -141,7 +169,13 @@ def build(src: Path, bbox=BBOX) -> dict:
     for f in feats:
         p = f["properties"]
         poly = max(polygons(f["geometry"]), key=lambda pp: abs(ring_area(pp[0])))
-        lp = label_point(poly)
+        lp = None
+        clipped = [clip_ring(pp[0], FOCUS) for pp in polygons(f["geometry"])]
+        clipped = [c for c in clipped if len(c) >= 4 and abs(ring_area(c)) > 2e-6]   # 약 0.02 km² 넘게 겹칠 때
+        if clipped:
+            lp = label_point([max(clipped, key=lambda c: abs(ring_area(c)))])
+        if lp is None:
+            lp = label_point(poly)
         area = sum(abs(ring_area(pp[0])) for pp in polygons(f["geometry"]))
         name = p["adm_nm"].split()[-1]
         out.append({"type": "Feature", "properties": {"kind": "label", "level": "emd", "name": name,

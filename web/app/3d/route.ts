@@ -67,7 +67,7 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
       </div>
       <p id="nowline" class="v3-now"></p>
       <div class="v3-flowrow">
-        <button type="button" id="flowbtn" class="v3-toggle" aria-pressed="false">흐름 보기</button>
+        <button type="button" id="flowbtn" class="v3-toggle" aria-pressed="false"><svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4h11M9 1l3 3-3 3"/><path d="M5 11h11M13 8l3 3-3 3"/></svg>흐름 보기</button>
         <span id="flowinfo" class="v3-flowinfo"></span>
       </div>
       <p id="flownote" class="v3-note" hidden>흰 줄은 물이 흐르는 방향과 빠르기(길수록 빠름)를 실제보다 100배 빠르게 흘린 것입니다. 하천은 단면 평균 유속(유량 ÷ 흐름 단면적), 범람 구역은 HEC-RAS 셀 경계면 유속으로 다시 계산한 셀 유속(20 m 격자)으로 그렸고, 방향·빠르기 비교용 표현입니다.</p>
