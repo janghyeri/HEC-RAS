@@ -42,6 +42,8 @@
 
   // ---------------------------------------------------------------- 셰이더 (재질 안에 모두 둔다 — 재질 uniform 이름이 바뀌어도 쓰도록)
   var MAT_SRC = [
+    // fwidth(창 무늬 흐리기)용. Cesium이 #extension 줄을 셰이더 맨 앞으로 옮긴다 (Primitive는 CustomShader와 달리 직접 켜야 함)
+    "#extension GL_OES_standard_derivatives : enable",
     "varying vec3 v_positionEC;",
     "varying vec3 v_normalEC;",
     "varying vec4 v_facade;", // s(벽 둘레 m), t(바닥에서 높이 m), 층고(m), 표현 코드(묶음×64 + 씨앗)
