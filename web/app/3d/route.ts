@@ -70,10 +70,10 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
       <div class="v3-views">
         <button type="button" data-view="tilt">비스듬히 보기</button>
         <button type="button" data-view="top">위에서 보기</button>
-        <label><input type="checkbox" id="bld" checked /> 건물</label>
+        <label><input type="checkbox" id="bld" checked /> 건물 (흰 상자)</label>
       </div>
       <div id="pick" class="v3-pick" aria-live="polite"><span class="muted">지도를 누르면 그 자리의 침수심 등급을 보여 줍니다.</span></div>
-      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
+      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 입체모형으로, 냉천 일대는 높이만 있는 흰 상자입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
     </div>
   </aside>
 </main>

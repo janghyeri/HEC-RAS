@@ -148,6 +148,7 @@
       S.ready = true;
       status("");
       setupPick();
+      setBuildings($("bld").checked);
       applyScenario();
       // 처음 비스듬한 시점으로. 브이월드가 초기화 뒤 카메라를 자기 처음 위치(우주·수직 시점 등)로 옮기는 일이 있어,
       // 사용자가 지도를 만지기 전까지 2.5초마다 확인해 목표(높이 약 2.2 km)에서 멀면 다시 보낸다 (최대 20초)
@@ -214,6 +215,30 @@
         duration: 1.6,
       });
     }
+  }
+
+  // 브이월드 3차원 건물: facility_build(사진 입힌 LoD4 — 포항 도심만 있음), facility_build_lod1(높이만 있는 흰 상자).
+  // 3.0은 LoD1이 꺼진 채 시작해서 냉천 일대에 건물이 안 보였다 (2026-11-11) → 처음에 켠다. 레이어가 늦게 생기면 몇 번 다시 시도
+  var BUILDINGS = ["facility_build", "facility_build_lod1"];
+  function setBuildings(on, tries) {
+    var missing = 0;
+    BUILDINGS.forEach(function (id) {
+      try {
+        var el = S.map && (S.map.getElementById(id) || S.map.getLayerElement(id));
+        if (!el) {
+          missing++;
+          return;
+        }
+        if (on) el.show();
+        else el.hide();
+      } catch (e) {
+        missing++;
+      }
+    });
+    if (missing && (tries || 0) < 6)
+      setTimeout(function () {
+        setBuildings($("bld").checked, (tries || 0) + 1);
+      }, 1000);
   }
 
   function rect(b) {
@@ -540,12 +565,7 @@
       });
     });
     $("bld").addEventListener("change", function (e) {
-      try {
-        var l = S.map && S.map.getLayerElement("facility_build");
-        if (l) e.target.checked ? l.show() : l.hide();
-      } catch (err) {
-        /* 건물 레이어 이름이 바뀌면 무시 */
-      }
+      setBuildings(e.target.checked);
     });
     $("fold").addEventListener("click", function () {
       var p = $("panel");
