@@ -233,12 +233,17 @@ def make_frames(hdf: Path, terrain_tif: Path, out: Path, scenario: str, model_ve
     terrain = read_terrain(str(terrain_tif))
     mesh = build_mesh(plan)
     cell_id = rasterize_cells(mesh["polygons"], terrain)
-    with tempfile.TemporaryDirectory() as tmp:
-        dump_hdf(scenario, Path(hdf), Path(tmp))
-        rv = load_river(Path(tmp) / f"river_{scenario}.npz")
-        g = np.load(Path(tmp) / f"river_{scenario}.npz")
-        xs_ws = g["|Results|Unsteady|Output|Output Blocks|Base Output|Unsteady Time Series|Cross Sections|Water Surface"]
-        xs_ws = xs_ws.astype(np.float64)
+    # Windows에서는 열린 파일을 지울 수 없다 → npz는 with로 열고 닫은 뒤 임시 폴더를 지운다 (2026-11-11 PC 오류 WinError 32)
+    tmp = Path(tempfile.mkdtemp(prefix="frames_"))
+    try:
+        npz = tmp / f"river_{scenario}.npz"
+        dump_hdf(scenario, Path(hdf), tmp)
+        rv = load_river(npz)
+        with np.load(npz) as g:
+            xs_ws = np.array(g["|Results|Unsteady|Output|Output Blocks|Base Output|Unsteady Time Series|Cross Sections|Water Surface"],
+                             dtype=np.float64)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     ws_frames = np.concatenate([a.ws_frames for a in plan.areas], axis=1)
     if xs_ws.shape[0] != ws_frames.shape[0]:
         raise ValueError(f"하천 단면 시각 수 {xs_ws.shape[0]} ≠ 2D 출력 시각 수 {ws_frames.shape[0]}")

@@ -37,8 +37,10 @@ def _k(g, path):
 
 
 def load_river(npz: Path) -> dict:
-    """dump_river_geom 출력에서 단면 자료를 꺼낸다 (단면 순서 = 결과 순서, 상류→하류)."""
-    g = np.load(npz)
+    """dump_river_geom 출력에서 단면 자료를 꺼낸다 (단면 순서 = 결과 순서, 상류→하류).
+    파일은 모두 읽은 뒤 바로 닫는다 (Windows에서 열린 파일이 남으면 임시 폴더를 지우지 못함)."""
+    with np.load(npz) as z:
+        g = {k: z[k] for k in z.files}
     att = _k(g, "/Geometry/Cross Sections/Attributes")
     rs = [r.decode().strip() for r in att["RS"]]
     rs_res = [r.decode().strip() for r in _k(g, "/Results/Unsteady/Geometry Info/Cross Section Attributes")["Station"]]
