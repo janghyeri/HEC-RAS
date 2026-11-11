@@ -669,6 +669,8 @@
     S.maxLayer = layers.addImageryProvider(p);
     S.maxLayer.alpha = 0.9;
     S.maxLayer.show = S.mode === "max";
+    ensureWaterMax();
+    applyWaterVisibility();
   }
 
   function clearFrame() {
@@ -782,12 +784,12 @@
     S.mode = m;
     if (S.viewer) S.viewer.scene.requestRender();
     if (m === "max") stop();
-    if (S.maxLayer) S.maxLayer.show = m === "max";
     if (m === "max") clearFrame();
     else {
       preloadFrames();
       showFrame(S.frame);
     }
+    applyWaterVisibility();
     renderControls();
   }
 
@@ -1221,16 +1223,27 @@
     }
   }
 
-  // ---- 시간대별 물 표면: 침수심 이미지(등급 색) 위에 그 시각 유속 방향으로 흐르는 물결 무늬 (flow map 기법)
-  // 유속은 침수심 이미지 범위를 덮는 작은 캔버스(약 25 m 화소)에 R=동, G=북 (128 = 0, ±VMAX m/s)으로 넣는다.
+  // ---- 물 표면 (최대 침수심·시간대별 모두): GroundPrimitive + 직접 쓴 재질
+  // 침수심 이미지는 4등급 색(화소 2~4 m)이라 가까이 보면 경계가 계단처럼 깨진다 → 화소 네 개의 등급을 읽어
+  // 등급별 '넘음 여부'를 쌍선형으로 보간하고 0.5에서 자르는 방식(등고선처럼)으로 화소 사이 경계를 부드럽게 다시 그린다.
+  // 최대 침수심은 2D 지도와 같은 타일(z16, 화소 약 1.9 m)을 이어 붙여 쓰고(웹 메르카토르 → 위도 보정), 시간대별은 10분 이미지.
+  // 시간대별에는 그 시각 유속 방향으로 흐르는 물결 무늬를 얹는다 (flow map 기법).
   // 그리기 오류가 나면 guardRender가 걷어내고 예전 방식(이미지 덮기)으로 돌아간다.
   var WATER_SRC = [
+    "#extension GL_OES_standard_derivatives : enable",
     "uniform sampler2D depthImg;",
     "uniform sampler2D flowImg;",
+    "uniform vec2 texSize;",
+    "uniform vec4 map;", // x,y: 메르카토르 보정 v = x t + y t², z: 1이면 메르카토르 텍스처
+    "uniform vec4 c1;",
+    "uniform vec4 c2;",
+    "uniform vec4 c3;",
+    "uniform vec4 c4;",
     "uniform vec2 scale;",
     "uniform float time;",
     "uniform float advect;",
     "uniform float opacity;",
+    "uniform float animate;",
     "float hnHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
     "float hnNoise(vec2 p) {",
     "  vec2 i = floor(p); vec2 f = fract(p);",
@@ -1239,24 +1252,44 @@
     "  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;",
     "}",
     "float hnRipple(vec2 q) { return hnNoise(q) * 0.65 + hnNoise(q * 2.7 + 3.1) * 0.35; }",
+    // 화소 가운데를 읽어 등급 번호(0 = 물 없음, 1~4)로. 등급 색의 알파가 210·220·230·240으로 서로 달라 알파로 가린다
+    "float hnCls(vec2 ij) {",
+    "  float a = texture2D(depthImg, (ij + 0.5) / texSize).a * 255.0;",
+    "  return a < 100.0 ? 0.0 : clamp(floor((a - 200.0) / 10.0 + 0.5), 1.0, 4.0);",
+    "}",
+    "float hnCov(float k, float a, float b, float c, float d, vec2 f) {",
+    "  float v = mix(mix(step(k, a), step(k, b), f.x), mix(step(k, c), step(k, d), f.x), f.y);",
+    "  float w = max(fwidth(v), 1e-3) * 0.7;",
+    "  return smoothstep(0.5 - w, 0.5 + w, v);",
+    "}",
     "czm_material czm_getMaterial(czm_materialInput materialInput) {",
     "  czm_material m = czm_getDefaultMaterial(materialInput);",
     "  vec2 st = materialInput.st;",
-    // 부드럽게(쌍선형) 읽되, 물 가장자리에서 투명 화소(검정)와 섞여 어두워지는 것을 알파로 되돌린다.
-    // 안쪽 화소는 알파가 등급 알파(0.82~0.94) 그대로라 색이 범례와 같다
-    "  vec4 c = texture2D(depthImg, st);",
-    "  if (c.a < 0.03) { m.alpha = 0.0; return m; }",
-    "  c.rgb = clamp(c.rgb / c.a * clamp(c.a, 0.82, 0.94), 0.0, 1.0);",
-    "  vec2 vel = (texture2D(flowImg, st).rg * 255.0 - 128.0) / 127.0;",
-    "  vec2 p = st * scale;",
-    "  float ph0 = fract(time * 0.2);",
-    "  float ph1 = fract(time * 0.2 + 0.5);",
-    "  float w = abs(ph0 - 0.5) * 2.0;",
-    "  float n = mix(hnRipple(p - vel * ph0 * advect), hnRipple(p - vel * ph1 * advect + vec2(17.3, 5.1)), w);",
-    "  float sp = clamp(length(vel) * 2.5, 0.0, 1.0);",
-    "  float crest = smoothstep(0.3, 0.85, n);",
-    "  vec3 col = c.rgb * (0.94 + 0.08 * n);",
-    "  col = mix(col, vec3(0.93, 0.97, 1.0), crest * (0.10 + 0.35 * sp));",
+    "  vec2 uv = vec2(st.x, map.z > 0.5 ? map.x * st.y + map.y * st.y * st.y : st.y);",
+    "  vec2 p = uv * texSize - 0.5;",
+    "  vec2 i = floor(p);",
+    "  vec2 f = p - i;",
+    "  float k00 = hnCls(i), k10 = hnCls(i + vec2(1.0, 0.0)), k01 = hnCls(i + vec2(0.0, 1.0)), k11 = hnCls(i + vec2(1.0, 1.0));",
+    "  if (k00 + k10 + k01 + k11 < 0.5) { m.alpha = 0.0; return m; }",
+    "  vec4 c = vec4(c1.rgb, 0.0);",
+    "  c = mix(c, c1, hnCov(1.0, k00, k10, k01, k11, f));",
+    "  c = mix(c, c2, hnCov(2.0, k00, k10, k01, k11, f));",
+    "  c = mix(c, c3, hnCov(3.0, k00, k10, k01, k11, f));",
+    "  c = mix(c, c4, hnCov(4.0, k00, k10, k01, k11, f));",
+    "  if (c.a < 0.01) { m.alpha = 0.0; return m; }",
+    "  vec3 col = c.rgb;",
+    "  if (animate > 0.5) {",
+    "    vec2 vel = (texture2D(flowImg, st).rg * 255.0 - 128.0) / 127.0;",
+    "    vec2 q = st * scale;",
+    "    float ph0 = fract(time * 0.2);",
+    "    float ph1 = fract(time * 0.2 + 0.5);",
+    "    float w = abs(ph0 - 0.5) * 2.0;",
+    "    float n = mix(hnRipple(q - vel * ph0 * advect), hnRipple(q - vel * ph1 * advect + vec2(17.3, 5.1)), w);",
+    "    float sp = clamp(length(vel) * 2.5, 0.0, 1.0);",
+    "    float crest = smoothstep(0.3, 0.85, n);",
+    "    col = col * (0.94 + 0.08 * n);",
+    "    col = mix(col, vec3(0.93, 0.97, 1.0), crest * (0.10 + 0.35 * sp));",
+    "  }",
     "  m.diffuse = col;",
     "  m.alpha = c.a * opacity;",
     "  return m;",
@@ -1265,44 +1298,81 @@
   var RIPPLE_M = 12; // 물결 한 무늬 크기 (m)
   var RIPPLE_SPEED = 15; // 물결이 실제 유속보다 몇 배 빠르게 움직일지
 
+  // 등급 색 (frames.json classes의 rgba, 없으면 2D 지도와 같은 값)
+  function classColors() {
+    var cl = (S.frames && S.frames.classes) || [
+      { rgba: [134, 182, 239, 210] },
+      { rgba: [57, 135, 229, 220] },
+      { rgba: [28, 92, 171, 230] },
+      { rgba: [13, 54, 107, 240] },
+    ];
+    return cl.slice(0, 4).map(function (c) {
+      var v = c.rgba;
+      return new Cesium.Cartesian4(v[0] / 255, v[1] / 255, v[2] / 255, v[3] / 255);
+    });
+  }
+
+  function makeWater(opts) {
+    // opts: { rect: [서, 남, 동, 북], img, texW, texH, merc: {A, B} | null, animate, flowSize: [w, h], scaleM: [가로 m, 세로 m] }
+    var cc = classColors();
+    var mat = new Cesium.Material({
+      translucent: true,
+      fabric: {
+        type: "HinnamnoWater" + (opts.animate ? "T" : "M"),
+        uniforms: {
+          depthImg: opts.img,
+          flowImg: neutralCanvas(opts.flowSize ? opts.flowSize[0] : 2, opts.flowSize ? opts.flowSize[1] : 2),
+          texSize: new Cesium.Cartesian2(opts.texW, opts.texH),
+          map: new Cesium.Cartesian4(opts.merc ? opts.merc.A : 1, opts.merc ? opts.merc.B : 0, opts.merc ? 1 : 0, 0),
+          c1: cc[0],
+          c2: cc[1],
+          c3: cc[2],
+          c4: cc[3],
+          scale: new Cesium.Cartesian2(opts.scaleM[0] / RIPPLE_M, opts.scaleM[1] / RIPPLE_M),
+          time: 0,
+          advect: (VMAX * RIPPLE_SPEED * 5) / RIPPLE_M, // 한 주기(5초) 동안 무늬 이동량 = 유속 × RIPPLE_SPEED × 5 s
+          opacity: 0.92,
+          animate: opts.animate ? 1 : 0,
+        },
+        source: WATER_SRC,
+      },
+    });
+    var prim = new Cesium.GroundPrimitive({
+      geometryInstances: new Cesium.GeometryInstance({
+        geometry: new Cesium.RectangleGeometry({ rectangle: rect(opts.rect), vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT }),
+      }),
+      appearance: new Cesium.EllipsoidSurfaceAppearance({ aboveGround: false, material: mat }),
+      classificationType: Cesium.ClassificationType.TERRAIN,
+      show: false,
+    });
+    S.viewer.scene.groundPrimitives.add(prim);
+    return { prim: prim, mat: mat };
+  }
+
+  function waterOK() {
+    if (S.water === false) return false;
+    try {
+      return !!S.viewer && Cesium.GroundPrimitive.supportsMaterials(S.viewer.scene);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 시간대별 물 (10분 이미지)
   function ensureWater() {
     if (S.water) return S.water;
-    if (S.water === false || !S.viewer || !S.frames) return null;
+    if (!waterOK() || !S.frames) {
+      if (S.viewer && S.water !== false && !waterOK()) S.water = false;
+      return null;
+    }
     try {
-      if (!Cesium.GroundPrimitive.supportsMaterials(S.viewer.scene)) {
-        S.water = false;
-        return null;
-      }
       var fr = S.frames,
         b = fr.bounds,
         px = fr.pixel_m || 4;
       var fw = Math.max(2, Math.ceil((fr.width * px) / 25)),
         fh = Math.max(2, Math.ceil((fr.height * px) / 25));
-      var mat = new Cesium.Material({
-        translucent: true,
-        fabric: {
-          type: "HinnamnoWater",
-          uniforms: {
-            depthImg: frameUrl(S.frame),
-            flowImg: neutralCanvas(fw, fh),
-            scale: new Cesium.Cartesian2((fr.width * px) / RIPPLE_M, (fr.height * px) / RIPPLE_M),
-            time: 0,
-            advect: (VMAX * RIPPLE_SPEED * 5) / RIPPLE_M, // 한 주기(5초) 동안 무늬 이동량 = 유속 × RIPPLE_SPEED × 5 s
-            opacity: 0.92,
-          },
-          source: WATER_SRC,
-        },
-      });
-      var prim = new Cesium.GroundPrimitive({
-        geometryInstances: new Cesium.GeometryInstance({
-          geometry: new Cesium.RectangleGeometry({ rectangle: rect(b), vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT }),
-        }),
-        appearance: new Cesium.EllipsoidSurfaceAppearance({ aboveGround: false, material: mat }),
-        classificationType: Cesium.ClassificationType.TERRAIN,
-        show: false,
-      });
-      S.viewer.scene.groundPrimitives.add(prim);
-      S.water = { prim: prim, mat: mat, fw: fw, fh: fh, bounds: b, frame: -1, flowKey: null };
+      var w = makeWater({ rect: b, img: frameUrl(S.frame), texW: fr.width, texH: fr.height, merc: null, animate: true, flowSize: [fw, fh], scaleM: [fr.width * px, fr.height * px] });
+      S.water = { prim: w.prim, mat: w.mat, fw: fw, fh: fh, bounds: b, frame: -1, flowKey: null };
       return S.water;
     } catch (e) {
       console.warn("[3D] 물 표면을 만들 수 없음 — 이미지 덮기로", e);
@@ -1310,13 +1380,105 @@
       return null;
     }
   }
-  function dropWater() {
-    if (S.water && S.viewer) {
+
+  // 최대 침수심 물: 2D 지도 타일(가장 자세한 단계)을 이어 붙인 텍스처. 다 불러오기 전에는 영상 레이어로 보인다
+  function ensureWaterMax() {
+    if (S.waterMax || S.waterMaxLoading || !S.tiles || !waterOK()) return;
+    var item = S.cur,
+      T = S.tiles;
+    var maxTex = (Cesium.ContextLimits && Cesium.ContextLimits.maximumTextureSize) || 4096;
+    var z = T.maxzoom,
+      x0,
+      x1,
+      y0,
+      y1;
+    for (; z >= T.minzoom; z--) {
+      x0 = Math.floor(((T.bounds[0] + 180) / 360) * Math.pow(2, z));
+      x1 = Math.floor(((T.bounds[2] + 180) / 360) * Math.pow(2, z));
+      y0 = Math.floor(latToTileY(T.bounds[3], z));
+      y1 = Math.floor(latToTileY(T.bounds[1], z));
+      if ((x1 - x0 + 1) * 256 <= Math.min(maxTex, 8192) && (y1 - y0 + 1) * 256 <= Math.min(maxTex, 8192)) break;
+    }
+    var nx = x1 - x0 + 1,
+      ny = y1 - y0 + 1;
+    var cv = document.createElement("canvas");
+    cv.width = nx * 256;
+    cv.height = ny * 256;
+    var ctx = cv.getContext("2d");
+    S.waterMaxLoading = true;
+    var jobs = [];
+    for (var j = 0; j < ny; j++)
+      for (var i = 0; i < nx; i++)
+        (function (i, j) {
+          jobs.push(
+            fetch(fileUrl(item, "tiles/" + z + "/" + (x0 + i) + "/" + (y0 + j) + ".png"))
+              .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                return r.blob();
+              })
+              .then(function (bl) {
+                return createImageBitmap(bl, { premultiplyAlpha: "none" });
+              })
+              .then(function (img) {
+                ctx.drawImage(img, i * 256, j * 256);
+              })
+              .catch(function () {})
+          );
+        })(i, j);
+    Promise.all(jobs).then(function () {
+      S.waterMaxLoading = false;
+      if (S.cur !== item || !S.viewer || S.water === false) return;
       try {
-        S.viewer.scene.groundPrimitives.remove(S.water.prim);
-      } catch (e) {}
+        var n = Math.pow(2, z);
+        var west = (x0 / n) * 360 - 180,
+          east = ((x1 + 1) / n) * 360 - 180;
+        var latN = tileYToLat(y0, z),
+          latS = tileYToLat(y1 + 1, z);
+        var r = Math.PI / 180;
+        var M = function (lat) {
+          return Math.log(Math.tan(Math.PI / 4 + (lat * r) / 2));
+        };
+        var R = M(latN) - M(latS),
+          d = (latN - latS) * r,
+          sec = 1 / Math.cos(latS * r);
+        var merc = { A: (sec * d) / R, B: (0.5 * sec * Math.tan(latS * r) * sec * d * d) / R };
+        var w = makeWater({ rect: [west, latS, east, latN], img: cv, texW: cv.width, texH: cv.height, merc: merc, animate: false, scaleM: [1, 1] });
+        S.waterMax = { prim: w.prim, mat: w.mat, item: item };
+        applyWaterVisibility();
+      } catch (e) {
+        console.warn("[3D] 최대 침수심 물 표면을 만들 수 없음", e);
+      }
+    });
+  }
+  function latToTileY(lat, z) {
+    var lr = (lat * Math.PI) / 180;
+    return ((1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2) * Math.pow(2, z);
+  }
+  function tileYToLat(y, z) {
+    var nn = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+    return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(nn) - Math.exp(-nn)));
+  }
+  // 최대 침수심: 물 표면이 준비되면 영상 레이어 대신
+  function applyWaterVisibility() {
+    var maxReady = !!(S.waterMax && S.waterMax.item === S.cur);
+    if (S.waterMax) S.waterMax.prim.show = S.mode === "max" && maxReady;
+    if (S.maxLayer) S.maxLayer.show = S.mode === "max" && !maxReady;
+    if (S.viewer) S.viewer.scene.requestRender();
+  }
+
+  function dropWater() {
+    if (S.viewer) {
+      [S.water, S.waterMax].forEach(function (w) {
+        if (w && w.prim) {
+          try {
+            S.viewer.scene.groundPrimitives.remove(w.prim);
+          } catch (e) {}
+        }
+      });
     }
     if (S.water) S.water = null;
+    S.waterMax = null;
+    S.waterMaxLoading = false;
   }
   function neutralCanvas(w, h) {
     var cv = document.createElement("canvas");
