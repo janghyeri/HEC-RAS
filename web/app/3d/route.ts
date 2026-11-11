@@ -35,6 +35,7 @@ export function GET() {
 <link rel="stylesheet" href="/view3d/view3d.css?v=${build}" />
 <script>window.__VIEW3D__ = ${JSON.stringify(cfg).replace(/</g, "\\u003c")};</script>
 ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey=${esc(key)}"></script>` : ""}
+<script src="/view3d/buildings.js?v=${build}" defer></script>
 <script src="/view3d/view3d.js?v=${build}" defer></script>
 </head>
 <body>
@@ -79,12 +80,13 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
       </div>
       <fieldset class="v3-layers">
         <legend>지도에 함께 보기</legend>
-        <label><input type="checkbox" id="bld" checked /> 건물 (높이 자료로 올린 상자)</label>
+        <label><input type="checkbox" id="bld" checked /> 건물 (건물통합정보 높이·층수·용도)</label>
+        <p id="bldnote" class="v3-note" aria-live="polite"></p>
         <label><input type="checkbox" id="adm" checked /> 행정구역 경계·이름 (시군구·읍면동)</label>
         <label><input type="checkbox" id="names" /> 건물·상호 이름</label>
       </fieldset>
       <div id="pick" class="v3-pick" aria-live="polite"><span class="muted">지도를 누르면 그 자리의 침수심 등급을 보여 줍니다.</span></div>
-      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 시간대별 물 표면의 물결은 그 시각 유속 방향으로 움직이는 표현이고, 색은 수심 등급 그대로입니다. 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 브이월드 3차원 건물 가운데 건물 바닥 모양을 높이 자료만큼 올린 상자(LoD1)만 불투명하게 그리고, 지붕에는 브이월드 항공사진을 입혔습니다(높은 건물은 사진이 비스듬히 찍혀 지붕 무늬가 조금 밀릴 수 있음). 벽은 실제 외관 사진이 없어 한 가지 색에 명암만 넣었고, 지도를 가까이(높이 약 1.5 km 아래) 볼 때 나타납니다. 행정구역은 통계청 통계지리정보서비스 행정동 경계(2022년 7월 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료(CC BY 4.0)입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
+      <p class="v3-note">물은 2 m 지형으로 계산한 수심을 브이월드 지면 위에 덮어 그렸습니다 (수위를 높이로 띄우지 않음). 시간대별 물 표면의 물결은 그 시각 유속 방향으로 움직이는 표현이고, 색은 수심 등급 그대로입니다. 숫자는 2 m 지형 기준이고, 항공사진·건물은 촬영 시점이라 2022년 9월과 다를 수 있습니다. 건물은 국토교통부 GIS건물통합정보(브이월드)의 외곽선·높이·지상층수·주용도로 직접 세웠습니다. 지붕은 브이월드 항공사진(높은 건물은 사진이 비스듬히 찍혀 지붕 무늬가 조금 밀릴 수 있음), 벽은 용도별(아파트·주택·상가·공장·공공) 표현에 실제 층수만큼 창을 그린 것으로 실제 외벽 사진이 아닙니다. 2022년 9월 6일 이후 사용승인된 건물은 뺐고, 건물을 누르면 층수·용도·사용승인일을 보여 줍니다. 건물은 지도를 가까이(높이 약 4 km 아래) 볼 때 보는 곳 둘레부터 불러옵니다. 행정구역은 통계청 통계지리정보서비스 행정동 경계(2022년 7월 기준, 공공누리 제1유형)를 vuski/admdongkor가 가공한 자료(CC BY 4.0)입니다. HEC-RAS 1D–2D 모의 결과로 실제 침수와 다를 수 있습니다.</p>
     </div>
   </aside>
 </main>

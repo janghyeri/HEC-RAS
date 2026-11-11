@@ -524,7 +524,7 @@
           viewer.scene.primitives.add(prim);
           T.prim = prim;
           T.list = res.list.map(function (b) {
-            return { c: b.c, p: b.props, shape: b.shape };
+            return { c: b.c, p: b.props, shape: b.shape, ring: b.polys[0][0] };
           });
           T.state = "ready";
           stats.buildings += res.list.length;
@@ -615,15 +615,28 @@
       viewer.scene.requestRender();
     }
 
-    // 누른 자리에서 가장 가까운 건물(중심점 기준 40 m 안)의 속성
+    function inside(ring, x, y) {
+      var c = false;
+      for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        var a = ring[i],
+          b = ring[j];
+        if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) c = !c;
+      }
+      return c;
+    }
+    // 누른 자리의 건물: 외곽선 안이면 그 건물, 아니면 중심점 25 m 안의 가장 가까운 건물
     function nearest(lon, lat) {
       var best = null,
-        bd = 40;
+        bd = 25;
       var kx = 111320 * Math.cos((lat * Math.PI) / 180);
       Object.keys(tiles).forEach(function (id) {
         (tiles[id].list || []).forEach(function (b) {
+          if (best && bd < 0) return;
           var d = Math.hypot((Cesium.Math.toDegrees(b.c.longitude) - lon) * kx, (Cesium.Math.toDegrees(b.c.latitude) - lat) * 110540);
-          if (d < bd) {
+          if (d < 200 && b.ring && inside(b.ring, lon, lat)) {
+            best = b;
+            bd = -1;
+          } else if (d < bd) {
             bd = d;
             best = b;
           }

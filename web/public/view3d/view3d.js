@@ -163,6 +163,7 @@
           updateRoofs();
         } catch (e) {}
       });
+      initOwnBuildings();
       setBuildings($("bld").checked);
       setNames($("names").checked);
       setAdmin($("adm").checked);
@@ -344,6 +345,7 @@
   var ROOF_Z = 17,
     ROOF_N = 8; // 8×8 타일 = 2048 화소 ≈ 2 km (위도 36°에서 화소 약 1 m)
   function updateRoofs() {
+    if (ownBuildings()) return;
     var sh = S.bldShader;
     if (!sh || !C.vworldKey || !$("bld").checked || (S.roof && S.roof.loading)) return;
     var cam = S.viewer.camera;
@@ -425,7 +427,51 @@
       S.bldTs.style = S.bldStyle;
     }
   }
+  // 실사풍 건물 (buildings.js — GIS건물통합정보로 직접 세움). 자료를 못 불러오거나 그리기 오류가 나면 브이월드 LoD1 상자로 돌아간다
+  function ownBuildings() {
+    return !!S.bld && !S.bldFailed;
+  }
+  function initOwnBuildings() {
+    if (S.bld || !window.HnBuildings || !C.vworldKey) return;
+    try {
+      S.bld = window.HnBuildings.create(S.viewer, {
+        key: C.vworldKey,
+        onState: function (msg, st) {
+          $("bldnote").textContent = (st.buildings > 0 ? "건물 " + st.buildings.toLocaleString("ko-KR") + "동" : "") + (msg ? (st.buildings > 0 ? " · " : "") + msg : "");
+        },
+        onFail: function () {
+          dropOwnBuildings("건물통합정보를 불러오지 못해 브이월드 상자 건물로 보여 줍니다.");
+        },
+      });
+    } catch (e) {
+      S.bld = null;
+    }
+  }
+  function dropOwnBuildings(note) {
+    if (!S.bld || S.bldFailed) return;
+    S.bldFailed = true;
+    try {
+      S.bld.setActive(false);
+    } catch (e) {}
+    $("bldnote").textContent = note || "";
+    setBuildings($("bld").checked);
+  }
   function setBuildings(on, tries) {
+    if (ownBuildings()) {
+      vwShow("facility_build", false);
+      vwShow("facility_build_lod1", false);
+      S.bld.setActive(on);
+      if (!on) $("bldnote").textContent = "";
+      // 브이월드 레이어가 늦게 생겨 다시 켜지는 경우가 있어 몇 번 더 끈다
+      if ((tries || 0) < 10)
+        setTimeout(function () {
+          if (ownBuildings()) {
+            vwShow("facility_build", false);
+            vwShow("facility_build_lod1", false);
+          }
+        }, 1000 * ((tries || 0) + 1));
+      return;
+    }
     vwShow("facility_build", false);
     var ok = vwShow("facility_build_lod1", on);
     if (on) ok = styleBuildings() && ok;
@@ -525,6 +571,7 @@
       S.water = false;
       dropBuildingShader();
       S.bldShader = null;
+      dropOwnBuildings("건물 그리기 오류로 브이월드 상자 건물로 보여 줍니다.");
       setTimeout(function () {
         try {
           S.viewer.useDefaultRenderLoop = true;
@@ -989,8 +1036,8 @@
       var dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       try {
-        if (S.bldStyle && $("bld").checked) styleBuildings();
-        if ((S.tick = (S.tick || 0) + 1) % 30 === 0) updateRoofs();
+        if (!ownBuildings() && S.bldStyle && $("bld").checked) styleBuildings();
+        if (!ownBuildings() && (S.tick = (S.tick || 0) + 1) % 30 === 0) updateRoofs();
         updateFlow(dt);
         updateFlood(dt);
         updateWater(now);
@@ -1359,21 +1406,50 @@
   function setupPick() {
     var h = new Cesium.ScreenSpaceEventHandler(S.viewer.scene.canvas);
     h.setInputAction(function (e) {
-      var ray = S.viewer.camera.getPickRay(e.position);
-      var pos = ray && S.viewer.scene.globe.pick(ray, S.viewer.scene);
+      // 건물 벽·지붕을 누르면 그 자리(깊이 버퍼), 아니면 지면
+      var pos = null;
+      try {
+        if (S.viewer.scene.pickPositionSupported) pos = S.viewer.scene.pickPosition(e.position);
+      } catch (err) {}
+      if (!pos) {
+        var ray = S.viewer.camera.getPickRay(e.position);
+        pos = ray && S.viewer.scene.globe.pick(ray, S.viewer.scene);
+      }
       if (!pos || !S.cur) return;
       var c = Cesium.Cartographic.fromCartesian(pos);
       var lon = Cesium.Math.toDegrees(c.longitude),
         lat = Cesium.Math.toDegrees(c.latitude);
       var when = S.mode === "time" && S.frames ? hhmm(S.frames.times[S.frame]) + " 침수심" : "최대 침수심";
       var link = (S.cur.runId ? "/?run=" + S.cur.runId : "/?s=" + encodeURIComponent(S.cur.id)) + "#map=17/" + lat.toFixed(5) + "/" + lon.toFixed(5);
+      var bi = ownBuildings() && $("bld").checked ? S.bld.nearest(lon, lat) : null;
+      var esc = function (t) {
+        return String(t).replace(/[&<>"]/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+        });
+      };
+      var bhtml = "";
+      if (bi) {
+        var a = bi.approved;
+        bhtml =
+          '<div class="v3-pick-row"><span>건물</span><b>' +
+          esc((bi.name ? bi.name + " · " : "") + bi.use) +
+          "</b></div>" +
+          '<div class="v3-pick-row"><span>층수·높이</span><b>' +
+          (bi.floors ? "지상 " + bi.floors + "층" : "층수 정보 없음") +
+          (bi.underground ? " · 지하 " + bi.underground + "층" : "") +
+          (bi.height ? " · " + bi.height.toFixed(1) + " m" : " · 높이 " + bi.heightUsed.toFixed(1) + " m(층수로 추정)") +
+          "</b></div>" +
+          (a && a.length === 8 ? '<div class="v3-pick-row"><span>사용승인</span><b>' + a.slice(0, 4) + "." + a.slice(4, 6) + "." + a.slice(6, 8) + "</b></div>" : "");
+      }
       sample(lon, lat).then(function (cls) {
         $("pick").innerHTML =
           '<div class="v3-pick-row"><span>' +
           when +
           "</span><b>" +
           (cls ? cls.range + " · " + cls.body : "0.1 m 미만 또는 계산 범위 밖") +
-          '</b></div><a href="' +
+          "</b></div>" +
+          bhtml +
+          '<a href="' +
           link +
           '">2D 지도에서 이 자리 자세히 보기</a>';
       });
