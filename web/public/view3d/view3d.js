@@ -614,7 +614,7 @@
   // 화면 표현용 (방향·빠르기 비교). 계산은 pipeline/river_flow.py, pipeline/flow2d_web.py
   var SPEEDUP = 100;
   var N_FLOW = 260; // 하천
-  var N_FLOOD = 520; // 범람 구역
+  var N_FLOOD = 900; // 범람 구역
   var VMAX = 4; // 물결 무늬용 유속 부호화 범위 (m/s)
 
   function lowerBound(a, v) {
@@ -819,7 +819,7 @@
   function ensureFlowLines() {
     if (!S.viewer) return;
     if (S.flow && !S.flow.lines) S.flow.lines = makeLines(N_FLOW, 2);
-    if (S.flood && !S.flood.lines) S.flood.lines = makeLines(N_FLOOD, 1.6);
+    if (S.flood && !S.flood.lines) S.flood.lines = makeLines(N_FLOOD, 2.2);
     if (S.loopOn) return;
     S.loopOn = true;
     var last = performance.now();
@@ -933,12 +933,12 @@
         line.show = false;
         continue;
       }
-      var len = Math.max(6, Math.min(90, sp * SPEEDUP * 0.22));
+      var len = Math.max(10, Math.min(90, sp * SPEEDUP * 0.25));
       var tl = p.lon - ((v[0] / sp) * len) / Z.kx,
         tt = p.lat - ((v[1] / sp) * len) / Z.ky;
-      line.positions = [Cesium.Cartesian3.fromDegrees(tl, tt, p.h + 2), Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h + 2)];
+      line.positions = [Cesium.Cartesian3.fromDegrees(tl, tt, p.h + 3), Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.h + 3)];
       var kk = p.age / p.life;
-      line.material.uniforms.color.alpha = 0.85 * Math.min(1, kk * 4, (1 - kk) * 4) * Math.min(1, 0.3 + sp / 1.5);
+      line.material.uniforms.color.alpha = 0.95 * Math.min(1, kk * 4, (1 - kk) * 4) * Math.min(1, 0.55 + sp);
       line.show = true;
     }
   }
@@ -949,7 +949,6 @@
   var WATER_SRC = [
     "uniform sampler2D depthImg;",
     "uniform sampler2D flowImg;",
-    "uniform vec2 texSize;",
     "uniform vec2 scale;",
     "uniform float time;",
     "uniform float advect;",
@@ -965,8 +964,11 @@
     "czm_material czm_getMaterial(czm_materialInput materialInput) {",
     "  czm_material m = czm_getDefaultMaterial(materialInput);",
     "  vec2 st = materialInput.st;",
-    "  vec4 c = texture2D(depthImg, (floor(st * texSize) + 0.5) / texSize);", // 화소 가운데만 읽어 등급 색이 섞이지 않게
-    "  if (c.a < 0.02) { m.alpha = 0.0; return m; }",
+    // 부드럽게(쌍선형) 읽되, 물 가장자리에서 투명 화소(검정)와 섞여 어두워지는 것을 알파로 되돌린다.
+    // 안쪽 화소는 알파가 등급 알파(0.82~0.94) 그대로라 색이 범례와 같다
+    "  vec4 c = texture2D(depthImg, st);",
+    "  if (c.a < 0.03) { m.alpha = 0.0; return m; }",
+    "  c.rgb = clamp(c.rgb / c.a * clamp(c.a, 0.82, 0.94), 0.0, 1.0);",
     "  vec2 vel = (texture2D(flowImg, st).rg * 255.0 - 128.0) / 127.0;",
     "  vec2 p = st * scale;",
     "  float ph0 = fract(time * 0.2);",
@@ -1005,7 +1007,6 @@
           uniforms: {
             depthImg: frameUrl(S.frame),
             flowImg: neutralCanvas(fw, fh),
-            texSize: new Cesium.Cartesian2(fr.width, fr.height),
             scale: new Cesium.Cartesian2((fr.width * px) / RIPPLE_M, (fr.height * px) / RIPPLE_M),
             time: 0,
             advect: (VMAX * RIPPLE_SPEED * 5) / RIPPLE_M, // 한 주기(5초) 동안 무늬 이동량 = 유속 × RIPPLE_SPEED × 5 s
