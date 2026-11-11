@@ -503,7 +503,7 @@
         v.terrainShadows = Cesium.ShadowMode.RECEIVE_ONLY;
         sc.shadowMap.softShadows = true;
         sc.shadowMap.size = 2048;
-        sc.shadowMap.darkness = 0.45;
+        sc.shadowMap.darkness = 0.55;
         sc.shadowMap.maximumDistance = 1500;
       }
       if (C.vworldKey && !S.hiLayer) {

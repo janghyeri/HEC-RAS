@@ -6,7 +6,7 @@
  *      주택: 면마다 창 1~3개(테두리), 몇 면은 1층 문, 일부 벽돌 무늬 / 상가: 1층 진열창 + 간판 띠
  *      공장·창고: 판넬 골·이음, 아래 콘크리트 띠, 위쪽 띠창, 긴 면 셔터 / 공공: 큰 창 줄
  *  - 흰색 모형(setStyle("white")): 무늬·사진 없이 흰 벽·지붕에 명암만
- *  - 그림자: Primitive가 그림자를 드리우고 받음 (장면 그림자는 view3d.js에서 켬)
+ *  - 그림자: 땅에만 드리움 (장면 그림자는 view3d.js에서 켬)
  *  - 2022-09-06 이후 사용승인된 건물은 뺀다 (힌남노 당시 없던 건물)
  * 카메라가 보는 곳 둘레의 웹 메르카토르 z16 타일(약 500 m) 단위로 불러오고, 멀어지면 지운다.
  * 자료 요청은 JSONP(브이월드 데이터 API는 CORS 머리글이 없음), 키는 이 사이트 주소에 등록된 브이월드 키.
@@ -425,9 +425,17 @@
       var code = b.shape.cat * 64 + b.seed;
       b.polys.forEach(function (poly) {
         // 벽: 모든 고리 (구멍 포함). 면마다 s = 면 시작부터 거리
-        poly.forEach(function (ring) {
+        poly.forEach(function (ring, ri) {
           var pts = clean(ring);
           if (pts.length < 3) return;
+          // 바깥 고리는 시계 반대(넓이 +)일 때, 구멍은 시계 방향일 때 cross(변, 위)가 바깥(공기 쪽)을 향한다
+          var area = 0;
+          for (var k2 = 0; k2 < pts.length; k2++) {
+            var u1 = pts[k2],
+              u2 = pts[(k2 + 1) % pts.length];
+            area += u1[0] * u2[1] - u2[0] * u1[1];
+          }
+          var flip = ri === 0 ? area < 0 : area > 0;
           for (var i = 0; i < pts.length; i++) {
             var p = pts[i],
               q = pts[(i + 1) % pts.length];
@@ -442,6 +450,7 @@
             C.Cartesian3.cross(tmpA, up, nrm);
             if (C.Cartesian3.magnitude(nrm) < 1e-9) continue;
             C.Cartesian3.normalize(nrm, nrm);
+            if (flip) C.Cartesian3.negate(nrm, nrm);
             var a = push(pb, nrm, 0, -SINK, fh, code, len, H, fl, 0, -1, -1, -1, -1),
               bq = push(qb, nrm, len, -SINK, fh, code, len, H, fl, 0, -1, -1, -1, -1),
               c = push(qt, nrm, len, H, fh, code, len, H, fl, 0, -1, -1, -1, -1),
@@ -614,7 +623,8 @@
             compressVertices: false,
             releaseGeometryInstances: true,
             allowPicking: false,
-            shadows: Cesium.ShadowMode.ENABLED,
+            // 그림자는 땅에만 드리운다 (건물 면이 그림자를 받으면 지붕에 줄무늬(그림자 여드름)가 생겨서 — 면 명암은 셰이더가 맡음)
+            shadows: Cesium.ShadowMode.CAST_ONLY,
             show: active,
           });
           viewer.scene.primitives.add(prim);
