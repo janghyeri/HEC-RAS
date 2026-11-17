@@ -127,8 +127,10 @@ class Worker:
             try:                                        # 10분 침수심 이미지 (지도 시간 재생·3D)
                 from pipeline.frames_web import make_frames
 
-                fr = make_frames(res.hdf, res.terrain, out, sid, ver, flow2d=True, extra_steps=((2.0, "frames2m"),))
-                log(f"10분 침수심 이미지 {fr['count']}장 ({fr['bytes_total'] / 1e6:.1f} MB)")
+                # 경사 수면(RAS Mapper sloping과 같은 원리): 4 m 등급 이미지 + 3D용 2 m 연속 수심 + 2D 최대 수심 타일 (2026-11-17)
+                fr = make_frames(res.hdf, res.terrain, out, sid, ver, flow2d=True, depth2m=True, tiles=True)
+                log(f"10분 침수심 이미지 {fr['count']}장 ({fr['bytes_total'] / 1e6:.1f} MB), "
+                    f"3D 연속 수심 {(fr.get('depth2m') or {}).get('MB')} MB, 경사 수면 타일 {(fr.get('tiles') or {}).get('tiles')}장")
                 f2 = fr.get("flow2d") or {}
                 log(f"범람 구역 흐름 자료 {f2.get('MB')} MB" if f2.get("ok") else f"범람 구역 흐름 실패 (이미지는 올림): {f2.get('error')}")
             except Exception as e:
@@ -141,7 +143,7 @@ class Worker:
                     self.sb.upload(BUCKET, f"{prefix}/{f}", p.read_bytes(), _ctype(p))
                     n += 1
             n += self.sb.upload_dir(BUCKET, f"{prefix}/tiles", out / "tiles", log=log)
-            for sub in ("frames", "frames2m"):            # 10분 침수심 이미지 (4 m, 3D 가까이 볼 때 2 m)
+            for sub in ("frames", "depth2m"):             # 10분 침수심 이미지 (4 m 등급, 3D 물 표면용 2 m 연속 수심)
                 if (out / sub / "frames.json").exists():
                     n += self.sb.upload_dir(BUCKET, f"{prefix}/{sub}", out / sub, log=log)
             tasks = _tasks(res.run.get("compute_messages"))

@@ -162,9 +162,9 @@ def main():
                     from pipeline.frames_web import make_frames
 
                     fr = make_frames(res.hdf, res.terrain, job_dir / "web_pub" / a.model_version / a.name, a.name,
-                                     a.model_version, flow2d=True, extra_steps=((2.0, "frames2m"),))
+                                     a.model_version, flow2d=True, depth2m=True, tiles=True)
                     river["frames"] = {"count": fr["count"], "MB": round(fr["bytes_total"] / 1e6, 2), "check": fr["check"],
-                                       "flow2d": fr.get("flow2d")}
+                                       "flow2d": fr.get("flow2d"), "depth2m": fr.get("depth2m"), "tiles": fr.get("tiles")}
                     log(f"10분 침수심 이미지 {fr['count']}장")
                 except Exception as e:
                     log(f"침수심 이미지 실패: {type(e).__name__}: {e}")

@@ -281,6 +281,72 @@ a {
   color: var(--muted);
 }
 
+/* 연속 수심 범례 (depth2m 있을 때) */
+.v3-legend.v3-ramp {
+  display: block;
+  padding-top: 10px;
+}
+
+.v3-ramp-bar {
+  height: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+}
+
+.v3-legend .v3-ramp-ticks {
+  position: relative;
+  display: block;
+  height: 34px;
+  margin: 1px 0 0;
+}
+
+.v3-ramp-ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.v3-ramp-ticks span::before {
+  content: "";
+  width: 1px;
+  height: 5px;
+  margin-bottom: 1px;
+  background: var(--ink);
+}
+
+.v3-ramp-ticks span:first-child {
+  transform: none;
+  align-items: flex-start;
+}
+
+.v3-ramp-ticks span:last-child {
+  transform: translateX(-100%);
+  align-items: flex-end;
+}
+
+.v3-ramp-ticks b {
+  font-weight: 500;
+}
+
+.v3-ramp-ticks em {
+  font-style: normal;
+  color: var(--muted);
+}
+
+.v3-legend .v3-ramp-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .v3-views {
   display: flex;
   flex-wrap: wrap;

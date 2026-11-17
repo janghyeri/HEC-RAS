@@ -44,6 +44,8 @@ class Area2D:
     ve_values: np.ndarray        # (*, 2) [표고, 체적]
     max_ws: np.ndarray           # (n,) 최대 수위
     ws_frames: np.ndarray        # (t, n) 출력 시각별 수위
+    faces_fp: np.ndarray | None = None     # (nf, 2) 면 양 끝 면점 번호 (경사 수면 표현용, 없으면 None)
+    faces_zmin: np.ndarray | None = None   # (nf,) 면 최저 표고
 
 
 @dataclass
@@ -85,6 +87,17 @@ def _compute_tasks(h) -> dict:
     return out
 
 
+def _face_zmin(h, g):
+    """면 최저 표고: Faces Minimum Elevation, 없으면 면 표고-면적 표의 첫 표고."""
+    if g + "/Faces Minimum Elevation" in h:
+        return h[g + "/Faces Minimum Elevation"][()].astype(float)
+    if g + "/Faces Area Elevation Info" in h and g + "/Faces Area Elevation Values" in h:
+        info = h[g + "/Faces Area Elevation Info"][()]
+        vals = h[g + "/Faces Area Elevation Values"][()]
+        return vals[info[:, 0].astype(np.int64), 0].astype(float)
+    return None
+
+
 def read_plan(path: str) -> PlanResult:
     with h5py.File(path, "r") as h:
         root = _attrs(h, "/")
@@ -111,6 +124,8 @@ def read_plan(path: str) -> PlanResult:
                 ve_values=h[g + "/Cells Volume Elevation Values"][()].astype(float),
                 max_ws=h[f"{SUM}/2D Flow Areas/{name}/Maximum Water Surface"][()][0][sl].astype(float),
                 ws_frames=h[f"{TS}/2D Flow Areas/{name}/Water Surface"][()][:, sl].astype(float),
+                faces_fp=h[g + "/Faces FacePoint Indexes"][()] if g + "/Faces FacePoint Indexes" in h else None,
+                faces_zmin=_face_zmin(h, g),
             ))
 
         summary = _attrs(h, "/Results/Unsteady/Summary")
