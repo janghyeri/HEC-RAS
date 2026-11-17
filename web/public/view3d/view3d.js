@@ -1696,13 +1696,7 @@
     var im = new Image();
     im.crossOrigin = "anonymous";
     im.src = fileUrl(item, D.max.file, D.generated_at);
-    var p = im.decode
-      ? im.decode()
-      : new Promise(function (res, rej) {
-          im.onload = res;
-          im.onerror = rej;
-        });
-    p.then(function () {
+    imgReady(im).then(function () {
       S.waterMaxLoading = false;
       if (S.cur !== item || !S.viewer || S.water === false) return;
       var w = makeWater({ rect: D.bounds, img: im, texW: D.width, texH: D.height, merc: null, animate: false, scaleM: [1, 1],
@@ -2113,6 +2107,28 @@
     ctx.fillRect(0, 0, w, h);
     return cv;
   }
+  // 이미지 준비: 받은 뒤 화면 밖에서 풀기(decode)까지 기다리되, 화면이 그려지지 않는 동안 decode가 끝나지 않는 일이 있어
+  // (숨은 창 등) 받은 지 0.4초가 지나면 그냥 쓴다 (그때는 텍스처로 올릴 때 풂)
+  function imgReady(im) {
+    var loaded = new Promise(function (res, rej) {
+      if (im.complete && im.naturalWidth) return res();
+      im.addEventListener("load", function () {
+        res();
+      }, { once: true });
+      im.addEventListener("error", rej, { once: true });
+    });
+    if (!im.decode) return loaded;
+    return Promise.race([
+      im.decode().catch(function () {
+        return loaded;
+      }),
+      loaded.then(function () {
+        return new Promise(function (r) {
+          setTimeout(r, 400);
+        });
+      }),
+    ]);
+  }
   // 물 표면 10분 이미지를 앞으로 볼 몇 장만 미리 받아 풀어 둔다. 2 m 판은 한 장이 1682×6205라
   // 바꿀 때마다 받으면(0.7~2.6초) 재생 간격(0.8초)보다 늦어 물이 건너뛰며 따라온다
   function waterImg(i) {
@@ -2122,13 +2138,7 @@
       e = (c[i] = { img: im, ready: false, failed: false });
     im.crossOrigin = "anonymous";
     im.src = waterFrameUrl(i);
-    var p = im.decode
-      ? im.decode()
-      : new Promise(function (res, rej) {
-          im.onload = res;
-          im.onerror = rej;
-        });
-    p.then(function () {
+    imgReady(im).then(function () {
       e.ready = true;
       var W = S.water;
       if (W && W.frame === i && S.wimg && S.wimg[i] === e) {
