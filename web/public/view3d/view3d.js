@@ -1494,6 +1494,7 @@
     if (S.water) S.water = null;
     S.waterMax = null;
     S.waterMaxLoading = false;
+    S.wimg = null;
   }
   function neutralCanvas(w, h) {
     var cv = document.createElement("canvas");
@@ -1504,11 +1505,49 @@
     ctx.fillRect(0, 0, w, h);
     return cv;
   }
+  // 물 표면 10분 이미지를 앞으로 볼 몇 장만 미리 받아 풀어 둔다. 2 m 판은 한 장이 1682×6205라
+  // 바꿀 때마다 받으면(0.7~2.6초) 재생 간격(0.8초)보다 늦어 물이 건너뛰며 따라온다
+  function waterImg(i) {
+    var c = S.wimg || (S.wimg = {});
+    if (c[i]) return c[i];
+    var im = new Image(),
+      e = (c[i] = { img: im, ready: false, failed: false });
+    im.crossOrigin = "anonymous";
+    im.src = waterFrameUrl(i);
+    var p = im.decode
+      ? im.decode()
+      : new Promise(function (res, rej) {
+          im.onload = res;
+          im.onerror = rej;
+        });
+    p.then(function () {
+      e.ready = true;
+      var W = S.water;
+      if (W && W.frame === i && S.wimg && S.wimg[i] === e) {
+        W.mat.uniforms.depthImg = im;
+        S.viewer.scene.requestRender();
+      }
+    }).catch(function () {
+      e.failed = true;
+      var W = S.water;
+      if (W && W.frame === i) W.mat.uniforms.depthImg = waterFrameUrl(i);
+    });
+    return e;
+  }
   function setWaterFrame(i) {
     var W = S.water;
     if (W.frame !== i) {
-      W.mat.uniforms.depthImg = waterFrameUrl(i);
       W.frame = i;
+      var e = waterImg(i);
+      if (e.ready) W.mat.uniforms.depthImg = e.img;
+      else if (e.failed) W.mat.uniforms.depthImg = waterFrameUrl(i);
+      // 아직 받는 중이면 앞 장을 그대로 두고, 다 풀리면 위에서 바꾼다
+      var n = waterFrames().count;
+      for (var k = 1; k <= 3 && i + k < n; k++) waterImg(i + k);
+      Object.keys(S.wimg).forEach(function (key) {
+        var j = Number(key);
+        if (j < i - 1 || j > i + 4) delete S.wimg[key];
+      });
     }
     W.prim.show = S.mode === "time";
     updateWaterFlow(i);
