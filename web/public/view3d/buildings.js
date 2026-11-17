@@ -18,6 +18,31 @@
   var ROOF_Z = 18; // 지붕 항공사진
   var FLOOD_DAY = "20220906";
   var SINK = 1.5; // 경사지에서 떠 보이지 않게 벽을 땅속으로 조금 내림 (m)
+  var FLOOD_STEP = 0.02; // 건물 둘레 수심 텍스처 1단계 (m)
+  var FLOOD_OUT = 3; // 둘레 수심을 읽는 곳: 외곽선 꼭짓점에서 바깥쪽으로 (m)
+
+  function blankCanvas() {
+    var cv = document.createElement("canvas");
+    cv.width = 1;
+    cv.height = 1;
+    return cv;
+  }
+  // 건물 둘레 수심을 읽을 점: 바깥 고리 꼭짓점(최대 16개)을 건물 중심에서 바깥으로 FLOOD_OUT m 민 곳 [lon, lat, ...]
+  function floodSamples(b) {
+    var ring = b.polys[0][0],
+      n = ring.length;
+    var cx = Cesium.Math.toDegrees(b.c.longitude),
+      cy = Cesium.Math.toDegrees(b.c.latitude);
+    var step = Math.max(1, Math.ceil(n / 16));
+    var out = [];
+    for (var i = 0; i < n; i += step) {
+      var dx = (ring[i][0] - cx) * b.kx,
+        dy = (ring[i][1] - cy) * 110540;
+      var L = Math.hypot(dx, dy) || 1;
+      out.push(ring[i][0] + ((dx / L) * FLOOD_OUT) / b.kx, ring[i][1] + ((dy / L) * FLOOD_OUT) / 110540);
+    }
+    return out;
+  }
 
   // 주용도코드(건축물대장) → 표현 묶음
   var CAT = { HOUSE: 0, APT: 1, SHOP: 2, FACTORY: 3, PUBLIC: 4 };
@@ -57,6 +82,12 @@
     "uniform sampler2D roofImg;",
     "uniform float roofOn;",
     "uniform float whiteMode;", // 1 = 흰색 모형 (무늬·사진 없이 명암만)
+    // 물에 잠긴 깊이 (3D 물 높이 보기): 건물마다 둘레 수심(m)을 작은 텍스처(256 × 줄)에 담아 넘긴다 — view3d.js가 시각마다 갱신
+    "varying float v_bid;",
+    "uniform sampler2D floodTex;",
+    "uniform float floodOn;",
+    "uniform float floodRows;",
+    "uniform float floodStep;",
     "float hb(float n) { return fract(sin(n * 12.9898) * 43758.5453); }",
     "float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
     "float vn(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);",
@@ -65,6 +96,21 @@
     "float band(float x, float a, float b, float w) { return smoothstep(a - w, a + w, x) * (1.0 - smoothstep(b - w, b + w, x)); }",
     // 일정 간격으로 되풀이되는 창: 간격 p, 창 폭 wd(가운데 기준), x는 m
     "float rep(float x, float p, float wd, float w) { float u = (fract(x / p) - 0.5) * p; return band(u, -wd * 0.5, wd * 0.5, w); }",
+    "float hnWD() {",
+    "  if (floodOn < 0.5) return 0.0;",
+    "  vec2 uv = vec2((mod(v_bid, 256.0) + 0.5) / 256.0, (floor(v_bid / 256.0 + 0.001) + 0.5) / floodRows);",
+    "  return texture2D(floodTex, uv).r * 255.0 * floodStep;",
+    "}",
+    // 물 높이(바닥에서 wd m) 아래 벽은 어둡고 푸르게, 물 높이에 밝은 선
+    "vec3 hnFlood(vec3 col, float t, float wd) {",
+    "  if (wd < 0.1) return col;",
+    "  float w = max(fwidth(t), 0.01);",
+    "  float under = 1.0 - smoothstep(wd - w, wd + w, t);",
+    "  vec3 wet = mix(col * vec3(0.50, 0.64, 0.78), vec3(0.16, 0.33, 0.52), 0.4);",
+    "  col = mix(col, wet, under * 0.85);",
+    "  float ln = band(t, wd - 0.07, wd + 0.07, w);",
+    "  return mix(col, vec3(0.88, 0.95, 1.0), ln * 0.9);",
+    "}",
     "vec3 pick4(float r, vec3 a, vec3 b, vec3 c, vec3 d) { return r < 0.25 ? a : (r < 0.5 ? b : (r < 0.75 ? c : d)); }",
     "vec3 glassCol(float ty, float fh, float k) {",
     "  vec3 dark = vec3(0.16, 0.20, 0.24) + 0.05 * k;",
@@ -86,10 +132,11 @@
     "  float seed = v_facade.w - cat * 64.0;",
     "  float r1 = hb(seed + 1.0), r2 = hb(seed + 7.0), r3 = hb(seed + 13.0);",
     "  float H = v_extra.y;",
+    "  float fdep = hnWD();",
     "  if (whiteMode > 0.5) {",
     "    vec3 wc = vec3(0.94, 0.94, 0.925);",
     "    float g = v_extra.w > 0.5 ? 1.0 : mix(0.74, 1.0, smoothstep(-0.2, 1.6, v_facade.y));",
-    "    m.diffuse = wc * g * (0.55 + 0.33 * diff + 0.14 * sky);",
+    "    m.diffuse = hnFlood(wc * g * (0.55 + 0.33 * diff + 0.14 * sky), v_facade.y, fdep);",
     "    return m;",
     "  }",
     // ---- 지붕: 낮은 건물은 항공사진(가장자리 번짐을 줄이려고 건물 중심 쪽으로 12 % 당겨 읽음), 높은 건물은 사진이 비스듬해 콘크리트 옥상
@@ -100,7 +147,7 @@
     "      vec3 a = texture2D(roofImg, clamp(mix(v_roof.xy, v_roof.zw, 0.12), 0.0, 1.0)).rgb;",
     "      rc = mix(a, base, 0.12);",
     "    }",
-    "    m.diffuse = rc * (0.78 + 0.22 * diff);",
+    "    m.diffuse = hnFlood(rc * (0.78 + 0.22 * diff), v_facade.y, fdep);",
     "    return m;",
     "  }",
     // ---- 벽
@@ -187,7 +234,7 @@
     "  }",
     "  col = mix(col, col * 0.86, (1.0 - fade) * 0.3);", // 멀리서는 무늬 대신 조금 어둡게
     "  col *= mix(0.70, 1.0, smoothstep(-0.2, 1.4, t));", // 바닥에 닿는 곳 어둡게 (접지감)
-    "  m.diffuse = col * (0.50 + 0.40 * diff + 0.14 * sky);",
+    "  m.diffuse = hnFlood(col * (0.50 + 0.40 * diff + 0.14 * sky), t, fdep);",
     "  return m;",
     "}",
   ].join("\n");
@@ -199,12 +246,14 @@
     "attribute vec4 facade;",
     "attribute vec4 extra;",
     "attribute vec4 roof;",
+    "attribute float bid;",
     "attribute float batchId;",
     "varying vec3 v_positionEC;",
     "varying vec3 v_normalEC;",
     "varying vec4 v_facade;",
     "varying vec4 v_extra;",
     "varying vec4 v_roof;",
+    "varying float v_bid;",
     "void main() {",
     "  vec4 p = czm_computePosition();",
     "  v_positionEC = (czm_modelViewRelativeToEye * p).xyz;",
@@ -212,6 +261,7 @@
     "  v_facade = facade;",
     "  v_extra = extra;",
     "  v_roof = roof;",
+    "  v_bid = bid;",
     "  gl_Position = czm_modelViewProjectionRelativeToEye * p;",
     "}",
   ].join("\n");
@@ -391,7 +441,9 @@
       fac = [],
       ext = [],
       rof = [],
+      bids = [],
       idx = [];
+    var curBid = 0;
     var vcount = 0;
     var C = Cesium;
     var tmpA = new C.Cartesian3(),
@@ -409,6 +461,7 @@
       fac.push(f0, f1, f2, f3);
       ext.push(e0, e1, e2, e3);
       rof.push(r0, r1, r2, r3);
+      bids.push(curBid);
       return vcount++;
     }
     function clean(ring) {
@@ -416,7 +469,8 @@
       if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
       return pts;
     }
-    list.forEach(function (b) {
+    list.forEach(function (b, bi) {
+      curBid = bi;
       var base = b.base - SINK,
         top = b.base + b.shape.h,
         H = b.shape.h,
@@ -499,6 +553,7 @@
         facade: f(fac, 4),
         extra: f(ext, 4),
         roof: f(rof, 4),
+        bid: f(bids, 1),
       },
       indices: Cesium.IndexDatatype.createTypedArray(vcount, idx),
       primitiveType: Cesium.PrimitiveType.TRIANGLES,
@@ -526,7 +581,15 @@
         translucent: false,
         fabric: {
           type: "HnBuilding" + Math.random().toString(36).slice(2, 8),
-          uniforms: { roofImg: roof ? roof.canvas : Cesium.Material.DefaultImageId, roofOn: roof ? 1 : 0, whiteMode: style === "white" ? 1 : 0 },
+          uniforms: {
+            roofImg: roof ? roof.canvas : Cesium.Material.DefaultImageId,
+            roofOn: roof ? 1 : 0,
+            whiteMode: style === "white" ? 1 : 0,
+            floodTex: blankCanvas(),
+            floodOn: 0,
+            floodRows: 1,
+            floodStep: FLOOD_STEP,
+          },
           source: MAT_SRC,
         },
       });
@@ -630,9 +693,11 @@
           viewer.scene.primitives.add(prim);
           T.prim = prim;
           T.list = res.list.map(function (b) {
-            return { c: b.c, p: b.props, shape: b.shape, ring: b.polys[0][0] };
+            return { c: b.c, p: b.props, shape: b.shape, ring: b.polys[0][0], fs: floodSamples(b), flood: null };
           });
           T.state = "ready";
+          applyFlood(T);
+          if (opts.onTile) opts.onTile(); // 물 높이 보기가 새 타일 범위까지 수심을 다시 읽게
           stats.buildings += res.list.length;
           stats.tiles++;
           failures = 0;
@@ -712,6 +777,70 @@
       pump();
     }
 
+    // ---- 물에 잠긴 깊이: fn(lon, lat) → 그 자리 수심(m). null이면 끔
+    var floodFn = null;
+    function applyFlood(T) {
+      if (!T.prim || !T.list) return;
+      var mat = T.prim.appearance && T.prim.appearance.material;
+      if (!mat) return;
+      if (!floodFn) {
+        mat.uniforms.floodOn = 0;
+        T.list.forEach(function (b) {
+          b.flood = null;
+        });
+        return;
+      }
+      var n = T.list.length,
+        rows = Math.max(1, Math.ceil(n / 256));
+      var cv = document.createElement("canvas");
+      cv.width = 256;
+      cv.height = rows;
+      var ctx = cv.getContext("2d");
+      var im = ctx.createImageData(256, rows),
+        D = im.data;
+      for (var j = 3; j < D.length; j += 4) D[j] = 255;
+      for (var i = 0; i < n; i++) {
+        var b = T.list[i],
+          s = b.fs,
+          mx = 0;
+        for (var k = 0; k < s.length; k += 2) {
+          var d = floodFn(s[k], s[k + 1]);
+          if (d > mx) mx = d;
+        }
+        b.flood = mx;
+        D[i * 4] = Math.max(0, Math.min(255, Math.round(mx / FLOOD_STEP)));
+      }
+      ctx.putImageData(im, 0, 0);
+      mat.uniforms.floodTex = cv;
+      mat.uniforms.floodRows = rows;
+      mat.uniforms.floodOn = 1;
+    }
+    function setFlood(fn) {
+      floodFn = fn || null;
+      Object.keys(tiles).forEach(function (id) {
+        applyFlood(tiles[id]);
+      });
+      viewer.scene.requestRender();
+    }
+    // 불러온 건물 타일을 모두 덮는 범위 [서, 남, 동, 북] (없으면 null)
+    function bounds() {
+      var bb = null;
+      Object.keys(tiles).forEach(function (id) {
+        if (!tiles[id].list) return;
+        var a = id.split("/");
+        var w = x2lon(+a[0], TILE_Z),
+          e = x2lon(+a[0] + 1, TILE_Z),
+          n = y2lat(+a[1], TILE_Z),
+          s = y2lat(+a[1] + 1, TILE_Z);
+        bb = bb ? [Math.min(bb[0], w), Math.min(bb[1], s), Math.max(bb[2], e), Math.max(bb[3], n)] : [w, s, e, n];
+      });
+      if (bb) {
+        var pad = 0.0006; // 바깥쪽 꼭짓점·이웃 타일에 걸친 건물 여유 (약 60 m)
+        bb = [bb[0] - pad, bb[1] - pad, bb[2] + pad, bb[3] + pad];
+      }
+      return bb;
+    }
+
     function setStyle(st) {
       style = st === "white" ? "white" : "real";
       Object.keys(tiles).forEach(function (id) {
@@ -766,7 +895,9 @@
         underground: parseInt(p.ugrnd_flr, 10) || 0,
         height: parseFloat(p.height) > 0 ? parseFloat(p.height) : null,
         heightUsed: best.shape.h,
+        floorHeight: best.shape.fh,
         approved: p.useapr_day || "",
+        flood: best.flood,
       };
     }
 
@@ -776,7 +907,8 @@
       } catch (e) {}
     });
 
-    return { setActive: setActive, setStyle: setStyle, update: update, nearest: nearest, stats: stats, tiles: tiles };
+    return { setActive: setActive, setStyle: setStyle, update: update, nearest: nearest, stats: stats, tiles: tiles,
+      setFlood: setFlood, bounds: bounds };
   }
 
   window.HnBuildings = { create: create, _shape: shapeOf };

@@ -35,6 +35,16 @@
     admin: null, // 행정구역 경계·이름 (CustomDataSource)
     bldStyle: null,
     t0: performance.now(),
+    w3d: (function () {
+      try {
+        return localStorage.getItem("hinnamno.water3d") !== "off";
+      } catch (e) {
+        return true;
+      }
+    })(), // 물 높이 3D (수면을 수심만큼 세우고 건물 잠김 깊이 표시)
+    sheet: null, // 세운 수면 {prim, mat}
+    sheetG: null, // 세운 수면 격자 (지면 높이 포함)
+    mask: null, // 2D 계산 영역 표시 이미지 (하천 물은 세우지 않음)
     bstyle: (function () {
       try {
         return localStorage.getItem("hinnamno.bldStyle") === "white" ? "white" : "real";
@@ -169,6 +179,7 @@
         try {
           updateRoofs();
         } catch (e) {}
+        refreshFlood3D();
       });
       enhanceScene();
       initOwnBuildings();
@@ -452,6 +463,9 @@
         onFail: function () {
           dropOwnBuildings("건물통합정보를 불러오지 못해 브이월드 상자 건물로 보여 줍니다.");
         },
+        onTile: function () {
+          refreshFlood3D();
+        },
       });
     } catch (e) {
       S.bld = null;
@@ -523,6 +537,7 @@
   }
 
   function setBuildings(on, tries) {
+    refreshFlood3D();
     if (ownBuildings()) {
       vwShow("facility_build", false);
       vwShow("facility_build_lod1", false);
@@ -886,12 +901,17 @@
       // 연속색: 0.1 ~ 3 m 막대 + 사람 키 기준 눈금(등수심선 0.5·1·2 m)
       var lo = RAMP[0].d,
         hi = RAMP[RAMP.length - 1].d;
+      // 얕은 쪽을 넓게 (제곱근 눈금) — 0.1·0.5 m 글자가 겹치지 않게
       var pos = function (d) {
-        return (((d - lo) / (hi - lo)) * 100).toFixed(1) + "%";
+        return (Math.sqrt(Math.max(0, (d - lo) / (hi - lo))) * 100).toFixed(1) + "%";
       };
-      var grad = RAMP.map(function (r) {
-        return "rgba(" + r.rgb.join(",") + "," + r.a + ") " + pos(r.d);
-      }).join(", ");
+      // 정지점 사이도 수심에 따라 이어지게 0.1 m 간격으로 색을 계산해 넣는다
+      var stops = [];
+      for (var dd = lo; dd <= hi + 1e-6; dd += 0.1) {
+        var c = rampAt(dd);
+        stops.push("rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + c[3].toFixed(2) + ") " + pos(dd));
+      }
+      var grad = stops.join(", ");
       var ticks = [
         { d: 0.1, t: "0.1 m" },
         { d: 0.5, t: "0.5 m", b: "무릎" },
@@ -1155,6 +1175,10 @@
         updateFlow(dt);
         updateFlood(dt);
         updateWater(now);
+        if (S.sheet && S.sheet.mat && S.sheet.prim.show) {
+          S.sheet.mat.uniforms.time = (now - S.t0) / 1000;
+          S.viewer.scene.requestRender();
+        }
       } catch (e) {
         console.warn("[3D] 흐름 갱신 오류", e);
       }
@@ -1423,6 +1447,19 @@
     { d: 3.0, rgb: [13, 47, 99], a: 0.92 },
   ];
   var CONTOURS = [0.5, 1.0, 2.0];
+  function rampAt(d) {
+    for (var i = 1; i < RAMP.length; i++) {
+      if (d <= RAMP[i].d || i === RAMP.length - 1) {
+        var a = RAMP[i - 1],
+          b = RAMP[i];
+        var f = Math.max(0, Math.min(1, (d - a.d) / (b.d - a.d)));
+        return [0, 1, 2].map(function (k) {
+          return Math.round(a.rgb[k] + (b.rgb[k] - a.rgb[k]) * f);
+        }).concat([a.a + (b.a - a.a) * f]);
+      }
+    }
+    return RAMP[RAMP.length - 1].rgb.concat([RAMP[RAMP.length - 1].a]);
+  }
   var RIPPLE_M = 12; // 물결 한 무늬 크기 (m)
   var RIPPLE_SPEED = 15; // 물결이 실제 유속보다 몇 배 빠르게 움직일지
 
@@ -1670,6 +1707,7 @@
         kind: "depth", dstep: D.encoding && D.encoding.step_m, minDepth: D.min_depth_m });
       S.waterMax = { prim: w.prim, mat: w.mat, item: item, img: im };
       applyWaterVisibility();
+      refreshFlood3D();
     }).catch(function (e) {
       S.waterMaxLoading = false;
       console.warn("[3D] 최대 침수심 연속 수심을 불러오지 못함", e);
@@ -1689,6 +1727,362 @@
     if (S.waterMax) S.waterMax.prim.show = S.mode === "max" && maxReady;
     if (S.maxLayer) S.maxLayer.show = S.mode === "max" && !maxReady;
     if (S.viewer) S.viewer.scene.requestRender();
+    refreshFlood3D();
+  }
+
+  // ---------------------------------------------------------------- 물 높이 3D (2026-11-17 사용자 요청)
+  // 수면을 '브이월드 지면 + 2 m 지형 기준 수심'만큼 세워(수위 절대 높이가 아님) 건물이 그 깊이만큼 잠겨 보이게 하고,
+  // 건물 벽에는 둘레 수심(외곽선 꼭짓점에서 3 m 바깥, 2D 셀 안 물만, 가장 깊은 값)까지 잠긴 색과 물 높이 선을 그린다.
+  // 하천(1D) 물은 브이월드 지형과 측량 하상 차이가 커서 세우지 않고 지면 색으로만 (area2d_2m.png로 가림).
+  // 연속 수심(depth2m)이 있는 결과에서만. 수면 격자는 보는 곳 둘레 200 × 200칸(가까우면 6 m, 멀면 12 m 간격)
+  var SHEET_SRC = [
+    "#extension GL_OES_standard_derivatives : enable",
+    "uniform sampler2D depthTex;",
+    "uniform vec2 texSize;",
+    "uniform float dstep;",
+    "uniform float time;",
+    "uniform float opacity;",
+    "float hsH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
+    "float hsN(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);",
+    "  return mix(mix(hsH(i), hsH(i + vec2(1.0, 0.0)), u.x), mix(hsH(i + vec2(0.0, 1.0)), hsH(i + vec2(1.0, 1.0)), u.x), u.y); }",
+    "float hsD(vec2 ij) { return texture2D(depthTex, (ij + 0.5) / texSize).r * 255.0 * dstep; }",
+    "czm_material czm_getMaterial(czm_materialInput materialInput) {",
+    "  czm_material m = czm_getDefaultMaterial(materialInput);",
+    "  vec2 p = materialInput.st * texSize - 0.5;",
+    "  vec2 i = floor(p);",
+    "  vec2 f = p - i;",
+    "  float d = mix(mix(hsD(i), hsD(i + vec2(1.0, 0.0)), f.x), mix(hsD(i + vec2(0.0, 1.0)), hsD(i + vec2(1.0, 1.0)), f.x), f.y);",
+    "  float aw = max(fwidth(d), 1e-4);",
+    "  float edge = smoothstep(0.1 - aw * 0.7, 0.1 + aw * 0.7, d);",
+    "  if (edge < 0.01) { m.alpha = 0.0; return m; }",
+    "  vec3 n = normalize(materialInput.normalEC);",
+    "  vec3 v = normalize(materialInput.positionToEyeEC);",
+    "  vec2 q = materialInput.st * texSize * 0.7 + vec2(time * 0.35, time * 0.21);",
+    "  float rip = (hsN(q) + 0.5 * hsN(q * 2.3 + 7.1) - 0.75) * 0.16;",
+    "  float fres = pow(1.0 - clamp(dot(n, v) + rip, 0.0, 1.0), 3.0);",
+    "  vec3 L = normalize(czm_lightDirectionEC);",
+    "  float spec = pow(max(dot(reflect(-L, n), v), 0.0), 70.0) * (0.6 + 3.0 * max(rip, 0.0));",
+    "  vec3 deep = vec3(0.07, 0.22, 0.36);",
+    "  vec3 sky = vec3(0.74, 0.83, 0.91);",
+    "  vec3 col = mix(deep, sky, 0.18 + 0.72 * fres) + vec3(spec * 0.5);",
+    "  float a = (0.20 + 0.55 * fres) * smoothstep(0.1, 0.4, d) + spec * 0.3;",
+    "  m.diffuse = col;",
+    "  m.alpha = clamp(a, 0.0, 0.85) * edge * opacity;",
+    "  return m;",
+    "}",
+  ].join("\n");
+
+  var flood3dTimer = null;
+  function refreshFlood3D() {
+    if (flood3dTimer) return;
+    flood3dTimer = setTimeout(function () {
+      flood3dTimer = null;
+      try {
+        doFlood3D();
+      } catch (e) {
+        console.warn("[3D] 물 높이 보기 오류", e);
+      }
+    }, 60);
+  }
+  function flood3dAvailable() {
+    return !!(S.viewer && S.depth && depthOK() && S.water !== false);
+  }
+  // 지금 보이는 수심 이미지 (풀린 것만)
+  function floodSource() {
+    if (S.mode === "time") {
+      var e = S.wimg && S.wimg[S.frame];
+      if (e && e.ready && S.water && S.water.kind === "depth") return { img: e.img, key: "t" + S.frame };
+      return null;
+    }
+    if (S.waterMax && S.waterMax.item === S.cur && S.waterMax.img) return { img: S.waterMax.img, key: "max" };
+    return null;
+  }
+  function loadMask() {
+    if (S.mask || S.maskLoading || !S.cur) return;
+    S.maskLoading = true;
+    var ver = S.version || "v1"; // 목록에서 고른 모형 버전 (웹 계산도 같은 버전만 보임)
+    var base = C.dataRoot + "/" + ver + "/area2d_2m";
+    Promise.all([getJSON(abs(base + ".json"), { cache: "no-cache" }), loadImg(abs(base + ".png"))])
+      .then(function (r) {
+        var info = r[0],
+          img = r[1];
+        var cv = document.createElement("canvas");
+        cv.width = info.width;
+        cv.height = info.height;
+        var ctx = cv.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        S.mask = { info: info, cv: cv, ctx: ctx };
+        S.maskLoading = false;
+        refreshFlood3D();
+      })
+      .catch(function () {
+        S.maskLoading = false;
+        S.mask = false; // 없으면 하천 물도 세운다
+      });
+  }
+  // 수심 이미지의 화소 범위 [x0, x0+w) × [y0, y0+h)를 읽는다 (2D 셀 밖은 0). 이미지 밖은 0
+  function floodRegionPx(img, x0, y0, w, h) {
+    var cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    var ctx = cv.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, -x0, -y0);
+    var im = ctx.getImageData(0, 0, w, h);
+    var D = im.data;
+    if (S.mask && S.mask.info && S.mask.info.width === S.depth.width && S.mask.info.height === S.depth.height) {
+      var M = S.mask.ctx.getImageData(x0, y0, w, h).data;
+      for (var k = 0; k < D.length; k += 4) {
+        if (M[k] < 128) D[k] = D[k + 1] = D[k + 2] = 0;
+      }
+      ctx.putImageData(im, 0, 0);
+    }
+    return { cv: cv, data: D, x0: x0, y0: y0, w: w, h: h };
+  }
+  function regionOfBounds(img, bb) {
+    var D = S.depth,
+      b = D.bounds;
+    var x0 = Math.max(0, Math.floor(((bb[0] - b[0]) / (b[2] - b[0])) * D.width) - 2);
+    var x1 = Math.min(D.width, Math.ceil(((bb[2] - b[0]) / (b[2] - b[0])) * D.width) + 2);
+    var y0 = Math.max(0, Math.floor(((b[3] - bb[3]) / (b[3] - b[1])) * D.height) - 2);
+    var y1 = Math.min(D.height, Math.ceil(((b[3] - bb[1]) / (b[3] - b[1])) * D.height) + 2);
+    if (x1 <= x0 || y1 <= y0) return null;
+    return floodRegionPx(img, x0, y0, x1 - x0, y1 - y0);
+  }
+  // 경위도 → 수심(m), 화소 중심 쌍선형
+  function regionDepthFn(R) {
+    var D = S.depth,
+      b = D.bounds,
+      step = (D.encoding && D.encoding.step_m) || 0.02;
+    var sx = D.width / (b[2] - b[0]),
+      sy = D.height / (b[3] - b[1]);
+    var dat = R.data,
+      w = R.w,
+      h = R.h;
+    function v(x, y) {
+      return x < 0 || y < 0 || x >= w || y >= h ? 0 : dat[(y * w + x) * 4];
+    }
+    return function (lon, lat) {
+      var fx = (lon - b[0]) * sx - 0.5 - R.x0,
+        fy = (b[3] - lat) * sy - 0.5 - R.y0;
+      var ix = Math.floor(fx),
+        iy = Math.floor(fy),
+        ax = fx - ix,
+        ay = fy - iy;
+      return ((v(ix, iy) * (1 - ax) + v(ix + 1, iy) * ax) * (1 - ay) + (v(ix, iy + 1) * (1 - ax) + v(ix + 1, iy + 1) * ax) * ay) * step;
+    };
+  }
+
+  function doFlood3D() {
+    var bldOn = ownBuildings() && $("bld").checked;
+    if (!S.w3d || !flood3dAvailable()) {
+      dropSheet();
+      if (S.bld && S.bld.setFlood) S.bld.setFlood(null);
+      return;
+    }
+    if (S.mask === null) loadMask();
+    if (S.maskLoading) return; // 가림 이미지를 받은 뒤 다시 불림
+    var src = floodSource();
+    if (!src) return; // 이미지가 풀리면 다시 불림
+    // 건물 잠김 깊이
+    if (S.bld && S.bld.setFlood) {
+      var bb = bldOn ? S.bld.bounds() : null;
+      var R = bb && regionOfBounds(src.img, bb);
+      S.bld.setFlood(R ? regionDepthFn(R) : null);
+    }
+    // 세운 수면
+    var G = ensureSheetGrid();
+    if (!G) {
+      if (S.sheet) S.sheet.prim.show = !!sheetWanted();
+      return;
+    }
+    buildSheet(G, src);
+  }
+
+  function sheetWanted() {
+    var D = S.depth,
+      cam = S.viewer.camera;
+    var h = cam.positionCartographic.height;
+    if (h > 3000) return null;
+    var cv = S.viewer.scene.canvas;
+    var hit = cam.pickEllipsoid(new Cesium.Cartesian2(cv.clientWidth / 2, cv.clientHeight * 0.6));
+    if (!hit) return null;
+    var c = Cesium.Cartographic.fromCartesian(hit);
+    var lon = Cesium.Math.toDegrees(c.longitude),
+      lat = Cesium.Math.toDegrees(c.latitude);
+    var b = D.bounds;
+    if (lon < b[0] - 0.01 || lon > b[2] + 0.01 || lat < b[1] - 0.01 || lat > b[3] + 0.01) return null;
+    var sp = h < 1200 ? 6 : 12,
+      stepPx = Math.max(1, Math.round(sp / (D.pixel_m || 2))),
+      N = 200;
+    var dlon = (b[2] - b[0]) / D.width,
+      dlat = (b[3] - b[1]) / D.height;
+    var cx = Math.round((lon - b[0]) / dlon / stepPx) * stepPx,
+      cy = Math.round((b[3] - lat) / dlat / stepPx) * stepPx;
+    return { stepPx: stepPx, N: N, cx: cx, cy: cy, px0: cx - (N / 2) * stepPx, py0: cy - (N / 2) * stepPx, dlon: dlon, dlat: dlat };
+  }
+  // 수면 격자: 꼭짓점마다 브이월드 지형 높이(sampleTerrain 15단계 — 건물 바닥과 같은 기준). 보는 곳이 격자 가운데 절반을 벗어나면 다시
+  function ensureSheetGrid() {
+    var w = sheetWanted();
+    if (!w) return null;
+    var G = S.sheetG;
+    var near = G && G.stepPx === w.stepPx && Math.abs(w.cx - G.cx) <= (G.N * G.stepPx) / 4 && Math.abs(w.cy - G.cy) <= (G.N * G.stepPx) / 4;
+    if (near) return G;
+    if (S.sheetLoading) return G;
+    S.sheetLoading = true;
+    var b = S.depth.bounds,
+      n1 = w.N + 1;
+    var cartos = new Array(n1 * n1);
+    for (var j = 0; j < n1; j++)
+      for (var i = 0; i < n1; i++) {
+        var px = w.px0 + i * w.stepPx,
+          py = w.py0 + j * w.stepPx;
+        cartos[j * n1 + i] = Cesium.Cartographic.fromDegrees(b[0] + px * w.dlon, b[3] - py * w.dlat);
+      }
+    Promise.resolve(Cesium.sampleTerrain(S.viewer.terrainProvider, 15, cartos))
+      .then(function (res) {
+        var ell = Cesium.Ellipsoid.WGS84,
+          ground = new Float64Array(n1 * n1 * 3),
+          up = new Float32Array(n1 * n1 * 3);
+        var tp = new Cesium.Cartesian3(),
+          tn = new Cesium.Cartesian3();
+        for (var k = 0; k < res.length; k++) {
+          var c = res[k];
+          var hh = c.height;
+          if (!isFinite(hh)) {
+            var g = S.viewer.scene.globe.getHeight(c);
+            hh = g === undefined ? 0 : g;
+          }
+          Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, hh, ell, tp);
+          ell.geodeticSurfaceNormalCartographic(c, tn);
+          ground[k * 3] = tp.x;
+          ground[k * 3 + 1] = tp.y;
+          ground[k * 3 + 2] = tp.z;
+          up[k * 3] = tn.x;
+          up[k * 3 + 1] = tn.y;
+          up[k * 3 + 2] = tn.z;
+        }
+        w.n1 = n1;
+        w.ground = ground;
+        w.up = up;
+        S.sheetG = w;
+        S.sheetLoading = false;
+        refreshFlood3D();
+      })
+      .catch(function (e) {
+        S.sheetLoading = false;
+        console.warn("[3D] 수면 격자 지형 높이를 읽지 못함", e);
+      });
+    return G;
+  }
+  function buildSheet(G, src) {
+    var D = S.depth,
+      N = G.N,
+      n1 = G.n1,
+      sp = G.stepPx;
+    var step = (D.encoding && D.encoding.step_m) || 0.02;
+    var x0 = G.px0 - 1,
+      y0 = G.py0 - 1,
+      w = N * sp + 2,
+      h = N * sp + 2;
+    var R = floodRegionPx(src.img, x0, y0, w, h);
+    var dat = R.data;
+    var nv = n1 * n1,
+      dep = new Float32Array(nv);
+    for (var j = 0; j < n1; j++)
+      for (var i = 0; i < n1; i++) {
+        // 꼭짓점 = 화소 모서리 → 둘레 화소 넷의 평균
+        var lx = i * sp + 1,
+          ly = j * sp + 1;
+        var s =
+          dat[((ly - 1) * w + (lx - 1)) * 4] + dat[((ly - 1) * w + lx) * 4] + dat[(ly * w + (lx - 1)) * 4] + dat[(ly * w + lx) * 4];
+        dep[j * n1 + i] = (s / 4) * step;
+      }
+    var idx = [];
+    for (var jj = 0; jj < N; jj++)
+      for (var ii = 0; ii < N; ii++) {
+        var k = jj * n1 + ii;
+        if (Math.max(dep[k], dep[k + 1], dep[k + n1], dep[k + n1 + 1]) >= 0.1) idx.push(k, k + 1, k + n1 + 1, k, k + n1 + 1, k + n1);
+      }
+    if (!idx.length) {
+      dropSheet();
+      return;
+    }
+    var pos = new Float64Array(nv * 3),
+      st = new Float32Array(nv * 2);
+    var gr = G.ground,
+      up = G.up;
+    for (var q = 0; q < nv; q++) {
+      var lift = Math.max(dep[q], 0) + 0.03;
+      pos[q * 3] = gr[q * 3] + up[q * 3] * lift;
+      pos[q * 3 + 1] = gr[q * 3 + 1] + up[q * 3 + 1] * lift;
+      pos[q * 3 + 2] = gr[q * 3 + 2] + up[q * 3 + 2] * lift;
+      var jx = Math.floor(q / n1),
+        ix2 = q - jx * n1;
+      st[q * 2] = (ix2 * sp + 1) / w;
+      st[q * 2 + 1] = 1 - (jx * sp + 1) / h;
+    }
+    var geom = new Cesium.Geometry({
+      attributes: {
+        position: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.DOUBLE, componentsPerAttribute: 3, values: pos }),
+        normal: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: 3, values: up }),
+        st: new Cesium.GeometryAttribute({ componentDatatype: Cesium.ComponentDatatype.FLOAT, componentsPerAttribute: 2, values: st }),
+      },
+      indices: Cesium.IndexDatatype.createTypedArray(nv, idx),
+      primitiveType: Cesium.PrimitiveType.TRIANGLES,
+      boundingSphere: Cesium.BoundingSphere.fromVertices(pos),
+    });
+    var mat = new Cesium.Material({
+      translucent: true,
+      fabric: {
+        type: "HnSheet" + Math.random().toString(36).slice(2, 8),
+        uniforms: { depthTex: R.cv, texSize: new Cesium.Cartesian2(w, h), dstep: step, time: (performance.now() - S.t0) / 1000, opacity: 1 },
+        source: SHEET_SRC,
+      },
+    });
+    var prim = new Cesium.Primitive({
+      geometryInstances: new Cesium.GeometryInstance({ geometry: geom }),
+      appearance: new Cesium.MaterialAppearance({
+        material: mat,
+        translucent: true,
+        flat: true,
+        faceForward: false,
+        closed: false,
+        materialSupport: Cesium.MaterialAppearance.MaterialSupport.TEXTURED,
+        renderState: { depthTest: { enabled: true }, depthMask: false, cull: { enabled: false } },
+      }),
+      asynchronous: false,
+      compressVertices: false,
+      allowPicking: false,
+      shadows: Cesium.ShadowMode.DISABLED,
+    });
+    S.viewer.scene.primitives.add(prim);
+    var old = S.sheet;
+    S.sheet = { prim: prim, mat: mat };
+    if (old) setTimeout(function () {
+      removeSheet(old);
+    }, 150);
+    S.viewer.scene.requestRender();
+  }
+  function removeSheet(s) {
+    if (!s) return;
+    try {
+      if (S.viewer) S.viewer.scene.primitives.remove(s.prim);
+    } catch (e) {}
+    try {
+      if (s.mat && !s.mat.isDestroyed()) s.mat.destroy();
+    } catch (e) {}
+  }
+  function dropSheet() {
+    var s = S.sheet;
+    S.sheet = null;
+    removeSheet(s);
+  }
+  function setWater3D(on) {
+    S.w3d = !!on;
+    try {
+      localStorage.setItem("hinnamno.water3d", on ? "on" : "off");
+    } catch (e) {}
+    refreshFlood3D();
   }
 
   function dropWater() {
@@ -1705,6 +2099,8 @@
     S.waterMax = null;
     S.waterMaxLoading = false;
     S.wimg = null;
+    dropSheet();
+    if (S.bld && S.bld.setFlood) S.bld.setFlood(null);
   }
   function neutralCanvas(w, h) {
     var cv = document.createElement("canvas");
@@ -1736,6 +2132,7 @@
       if (W && W.frame === i && S.wimg && S.wimg[i] === e) {
         W.mat.uniforms.depthImg = im;
         S.viewer.scene.requestRender();
+        refreshFlood3D();
       }
     }).catch(function () {
       e.failed = true;
@@ -1749,8 +2146,10 @@
     if (W.frame !== i) {
       W.frame = i;
       var e = waterImg(i);
-      if (e.ready) W.mat.uniforms.depthImg = e.img;
-      else if (e.failed) W.mat.uniforms.depthImg = waterFrameUrl(i);
+      if (e.ready) {
+        W.mat.uniforms.depthImg = e.img;
+        refreshFlood3D();
+      } else if (e.failed) W.mat.uniforms.depthImg = waterFrameUrl(i);
       // 아직 받는 중이면 앞 장을 그대로 두고, 다 풀리면 위에서 바꾼다
       var n = waterFrames().count;
       for (var k = 1; k <= 3 && i + k < n; k++) waterImg(i + k);
@@ -1959,7 +2358,12 @@
           (bi.underground ? " · 지하 " + bi.underground + "층" : "") +
           (bi.height ? " · " + bi.height.toFixed(1) + " m" : " · 높이 " + bi.heightUsed.toFixed(1) + " m(층수로 추정)") +
           "</b></div>" +
-          (a && a.length === 8 ? '<div class="v3-pick-row"><span>사용승인</span><b>' + a.slice(0, 4) + "." + a.slice(4, 6) + "." + a.slice(6, 8) + "</b></div>" : "");
+          (a && a.length === 8 ? '<div class="v3-pick-row"><span>사용승인</span><b>' + a.slice(0, 4) + "." + a.slice(4, 6) + "." + a.slice(6, 8) + "</b></div>" : "") +
+          (bi.flood != null && bi.flood >= 0.1
+            ? '<div class="v3-pick-row"><span>건물 둘레 수심</span><b>약 ' + bi.flood.toFixed(2) + " m" +
+              (bi.floorHeight ? " · 1층(층고 " + bi.floorHeight.toFixed(1) + " m)의 " + Math.min(100, Math.round((bi.flood / bi.floorHeight) * 100)) + " %" : "") +
+              "</b></div>"
+            : "");
       }
       sample(lon, lat).then(function (r) {
         var cls = r && r.cls,
@@ -2017,6 +2421,10 @@
     });
     $("adm").addEventListener("change", function (e) {
       setAdmin(e.target.checked);
+    });
+    $("w3d").checked = S.w3d;
+    $("w3d").addEventListener("change", function (e) {
+      setWater3D(e.target.checked);
     });
     $("names").addEventListener("change", function (e) {
       setNames(e.target.checked);
