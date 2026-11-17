@@ -134,7 +134,8 @@
   "flow2d.json": "범람 구역 흐름 방향 설명 (격자 20 m, 70시각) — 3D '흐름 보기'",
   "flow2d.bin": "범람 구역 셀 유속(동·북) Int8 — 형식은 flow2d.json",
   "river_flow.json": "냉천 흐름 표시용 단면 평균 유속·수면 폭 (화면 표현용)",
-  "depth2m/": "3D 물 표면용 연속 수심 70장 + max.png (화소 2 m, 8비트 회색조 × 0.02 m, 경사 수면) — 설명은 depth2m/frames.json"
+  "depth2m/": "3D 물 표면용 연속 수심 70장 + max.png (화소 2 m, 8비트 회색조 × 0.02 m, 경사 수면) — 설명은 depth2m/frames.json",
+  "buildings.json": "침수 건물 수 (건물통합정보 × 최대 수심, 외곽선 안 ≥ 0.1·0.5·1.0 m)"
  },
  "render_mode": {
   "images": "sloping",

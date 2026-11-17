@@ -52,6 +52,9 @@ function rows(list: Summary[]): Row[] {
     { key: "a05", label: "· 0.5 m 이상", unit: "km²", digits: 2, get: (s) => s.kpi.inundation_area_km2["ge_0.5m"] },
     { key: "a10", label: "· 1.0 m 이상", unit: "km²", digits: 2, get: (s) => s.kpi.inundation_area_km2["ge_1.0m"] },
     { key: "a20", label: "· 2.0 m 이상", unit: "km²", digits: 2, get: (s) => s.kpi.inundation_area_km2["ge_2.0m"] },
+    { key: "b01", label: "침수 건물 (외곽선 안 0.1 m 이상)", unit: "동", digits: 0, get: (s) => s.bld?.flooded["ge_0.1m"] ?? null },
+    { key: "b05", label: "· 0.5 m 이상 (무릎)", unit: "동", digits: 0, get: (s) => s.bld?.flooded["ge_0.5m"] ?? null },
+    { key: "b10", label: "· 1.0 m 이상 (허리)", unit: "동", digits: 0, get: (s) => s.bld?.flooded["ge_1.0m"] ?? null },
     { key: "dur", label: "0.3 m 이상 1시간 넘게 침수", unit: "km²", digits: 2, get: (s) => s.kpi["duration_ge_0.3m"]?.area_km2_ge_1h ?? null },
     { key: "pk", label: "순간 최대 침수면적", unit: "km²", digits: 2, get: (s) => s.kpi.peak_instant_area.km2 },
     { key: "on", label: "침수 시작 시각", unit: "", digits: 0, time: true, get: (s) => s.kpi.onset_time },
@@ -527,6 +530,11 @@ export default function AnalysisApp() {
                 </table>
               </div>
               <p className="muted small">조건 이름을 누르면 침수 지도에서 그 결과를 엽니다. 웹 계산은 조건 설정·실행 화면에서 요청해 끝난 것입니다.</p>
+              <p className="muted small">
+                침수 건물 수: 국토교통부 GIS건물통합정보(브이월드) 건물 외곽선 안 최대 수심(2 m 지형 기준, 경사 수면)이 기준 이상인 건물, 2D 계산 범위 안{" "}
+                {list.find((s) => s.bld)?.bld?.buildings_in_domain.toLocaleString("ko-KR") ?? "—"}동 기준. 2022-09-06 이후 지은 건물은 뺐습니다. 웹 계산 결과는 아직
+                계산하지 않았습니다(—).
+              </p>
             </section>
           )}
 

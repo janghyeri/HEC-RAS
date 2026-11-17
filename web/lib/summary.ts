@@ -15,12 +15,20 @@ import {
 } from "./data";
 import { hasSupabase, listRuns, resultsUrlBase } from "./supabase";
 
+/** 침수 건물 수 (buildings.json — 건물통합정보 × 최대 수심, 게시된 결과만) */
+export interface BuildingKpi {
+  buildings_in_domain: number;
+  flooded: { "ge_0.1m": number; "ge_0.5m": number; "ge_1.0m": number };
+  by_use?: { use: string; total: number; "flooded_ge_0.1m": number; "flooded_ge_0.5m": number }[];
+}
+
 export interface Summary {
   ref: ScenarioRef;
   kpi: KpiFull;
   meta: ScenarioMeta;
   tiles: TilesInfo;
   ts: Timeseries | null;
+  bld: BuildingKpi | null;
 }
 
 async function json<T>(url: string): Promise<T> {
@@ -30,13 +38,14 @@ async function json<T>(url: string): Promise<T> {
 }
 
 export async function loadSummary(ref: ScenarioRef): Promise<Summary> {
-  const [kpi, meta, tiles, ts] = await Promise.all([
+  const [kpi, meta, tiles, ts, bld] = await Promise.all([
     json<KpiFull>(scenarioUrl(ref, "kpi.json")),
     json<ScenarioMeta>(scenarioUrl(ref, "meta.json")),
     json<TilesInfo>(scenarioUrl(ref, "tiles/tiles.json")),
     json<Timeseries>(scenarioUrl(ref, "timeseries.json")).catch(() => null),
+    json<BuildingKpi>(scenarioUrl(ref, "buildings.json")).catch(() => null),
   ]);
-  return { ref, kpi, meta, tiles, ts };
+  return { ref, kpi, meta, tiles, ts, bld };
 }
 
 export async function loadSummaries(): Promise<{ version: string; model: ModelInfo; list: Summary[] }> {

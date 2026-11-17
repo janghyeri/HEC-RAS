@@ -1,0 +1,55 @@
+{
+ "model_version": "v1",
+ "scenario_id": "S2-mh050",
+ "definition": "침수 건물 = 건물 외곽선 안 최대 수심 ≥ 기준 (docs/GUIDE.md §4.4.1). 수심은 depth2m/max.png (2 m 경위도 격자, 경사 수면, 2 m 지형 기준, 0.02 m 단위)",
+ "domain": "건물 외곽선 안 화소가 2D 계산 범위(area2d_2m.png)에 걸친 건물만",
+ "source": "국토교통부 GIS건물통합정보 (브이월드 데이터 API LT_C_BLDGINFO), 2022-09-06 이후 사용승인 건물 126동 제외",
+ "buildings_in_domain": 12133,
+ "flooded": {
+  "ge_0.1m": 3320,
+  "ge_0.5m": 1003,
+  "ge_1.0m": 333
+ },
+ "ring_check": {
+  "note": "외곽선 꼭짓점에서 3 m 바깥 최대 수심 기준 (3D 물 높이 보기와 같은 방식) — 참고",
+  "ge_0.1m": 3513,
+  "ge_0.5m": 1089,
+  "ge_1.0m": 364
+ },
+ "by_use": [
+  {
+   "use": "주택",
+   "total": 3246,
+   "flooded_ge_0.1m": 857,
+   "flooded_ge_0.5m": 166
+  },
+  {
+   "use": "공동주택",
+   "total": 515,
+   "flooded_ge_0.1m": 178,
+   "flooded_ge_0.5m": 43
+  },
+  {
+   "use": "상가·업무",
+   "total": 1568,
+   "flooded_ge_0.1m": 365,
+   "flooded_ge_0.5m": 108
+  },
+  {
+   "use": "공장·창고",
+   "total": 475,
+   "flooded_ge_0.1m": 268,
+   "flooded_ge_0.5m": 126
+  },
+  {
+   "use": "그 밖",
+   "total": 6329,
+   "flooded_ge_0.1m": 1652,
+   "flooded_ge_0.5m": 560
+  }
+ ],
+ "use_groups": "주택 01000 · 공동주택 02000 · 상가·업무 03000/04000/07000/14000/15000/16000 · 공장·창고 17000–22000 · 그 밖(공공·교육·부속 건물·용도 없음 등)",
+ "threshold_note": "기준 수심(0.1 m)은 침수면적 정의와 같게 둠 — 0.5 m(무릎)·1.0 m(허리)도 함께. 어느 쪽을 주 값으로 쓸지는 사용자 판단",
+ "depth_generated_at": "2026-11-17T06:39:29+00:00",
+ "computed_at": "2026-11-17T11:53:12+00:00"
+}
