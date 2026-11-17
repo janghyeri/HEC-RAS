@@ -1419,6 +1419,8 @@
     "  vec3 col = c.rgb;",
     "  col = mix(col, vec3(0.86, 0.93, 1.0), (1.0 - smoothstep(minDepth, minDepth + 0.12, d)) * 0.25);", // 물가를 조금 밝게
     "  float lf = 1.0 - smoothstep(0.06, 0.2, aw);", // 멀리서(화소마다 수심이 크게 바뀌면) 선을 숨김
+    // 네 화소가 같은 값(0.02 m 단위로 평평)이면 선을 긋지 않음 — 수심이 딱 0.5·1·2 m인 평평한 곳이 흰 네모로 칠해지지 않게
+    "  lf *= step(dstep * 0.5, max(max(abs(d10 - d00), abs(d01 - d00)), abs(d11 - d00)));",
     "  float ln = max(max(hnLine(d, lines.x, aw), hnLine(d, lines.y, aw)), hnLine(d, lines.z, aw)) * lf * lineCol.a;",
     "  if (animate > 0.5) {",
     "    vec2 vel = (texture2D(flowImg, st).rg * 255.0 - 128.0) / 127.0;",
