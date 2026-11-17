@@ -19,10 +19,10 @@ description: 웹 요청 또는 PC에서 HEC-RAS 계산 1건을 실행하고(입�
    - Supabase Storage `results/<버전>/run-<id>/`에 올리고 `runs` 표 상태를 `done`으로.
 3. PC에서 직접 (웹 없이)
    ```
-   python -m worker.run_local --name <이름> --base S0-C --param internal_flow_factor=1.5 --param tide_offset_m=0.5
+   python -m worker.run_local --name <이름> --base S0-C --set internal_flow_factor=1.5 --set tide_offset_m=0.5 --compare --export
    ```
 4. 확인
-   - 배율 1.0 실행이 보유 결과와 같은지: `python -m worker.compare_results` — 침수면적 ±1 %, 셀 최대수위 차이 99분위 0.02 m 이내면 '같음'.
+   - 배율 1.0 실행이 보유 결과와 같은지: `python -m worker.compare_results --a <기준 p03.hdf> --b <새 p03.hdf>` — 침수면적 ±1 %, 셀 최대수위 차이 99분위 0.02 m 이내면 '같음'.
    - 측방 구조물 RS 7.65는 실행마다 월류 방향이 바뀌는 불안정 구간이라 좌안 값은 참고만 한다.
    - 계산 시간(24코어): 부정류 1.5~3분 + 1D 후처리 약 4분, 변환·업로드 포함 1건 약 9분.
 5. 같은 조건은 다시 계산하지 않는다 — 조건 해시(`worker/hecras_job.py params_hash` = 웹 `lib/runConfig.ts`)로 기존 결과에 연결.
