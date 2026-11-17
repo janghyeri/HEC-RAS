@@ -3,7 +3,7 @@
  "scenario_id": "S0-C",
  "label": "힌남노 외수+내수",
  "plan_title": "Unsteady flow_Hin Namno",
- "generated_at": "2026-11-02T13:50:33+00:00",
+ "generated_at": "2026-11-17T11:08:46+00:00",
  "n_cells": 43948,
  "geometry_hash": "7946126b2964d014",
  "frames": {
@@ -128,12 +128,17 @@
   "kpi.json": "핵심 지표",
   "timeseries.json": "시계열",
   "manholes.geojson": "2D 내부 유입 경계 위치·첨두·체적",
-  "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ) — 2D 셀 수심 + 하천(1D) 구간 수면, 설명은 tiles/tiles.json",
+  "tiles/": "최대 수심 등급 PNG 타일 z10–16 (XYZ) — 2D 수심(경사 수면) + 하천(1D) 구간 수면, 설명은 tiles/tiles.json",
   "river.json": "냉천 1D 단면 위치·하상·제방 높이·최대 수위 (지도에서 하천을 누를 때)",
-  "frames/": "10분 침수심 이미지 70장 (경위도 격자, 화소 4 m) — 시간 재생·3D 지면 덮기, 설명은 frames/frames.json",
+  "frames/": "10분 침수심 이미지 70장 (경위도 격자, 화소 4 m, 경사 수면) — 시간 재생·3D 지면 덮기, 설명은 frames/frames.json",
   "flow2d.json": "범람 구역 흐름 방향 설명 (격자 20 m, 70시각) — 3D '흐름 보기'",
   "flow2d.bin": "범람 구역 셀 유속(동·북) Int8 — 형식은 flow2d.json",
   "river_flow.json": "냉천 흐름 표시용 단면 평균 유속·수면 폭 (화면 표현용)",
-  "frames2m/": "10분 침수심 이미지 70장 (화소 2 m, 3D 가까이 볼 때) — 설명은 frames2m/frames.json"
+  "depth2m/": "3D 물 표면용 연속 수심 70장 + max.png (화소 2 m, 8비트 회색조 × 0.02 m, 경사 수면) — 설명은 depth2m/frames.json"
+ },
+ "render_mode": {
+  "images": "sloping",
+  "kpi": "셀 표고-체적 표 기준 (경사 수면과 무관)",
+  "decided": "2026-11-17 사용자 결정 — RAS Mapper RenderMode=sloping과 맞춤"
  }
 }
