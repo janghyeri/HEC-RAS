@@ -2054,3 +2054,15 @@ a:hover {
 .swatch-names::before {
   content: "가";
 }
+
+/* 분석·비교: 두 결과 고르기 (2026-11-17) */
+.cmp-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+.cmp-pick select {
+  max-width: 100%;
+}

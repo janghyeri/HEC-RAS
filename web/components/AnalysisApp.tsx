@@ -1,7 +1,9 @@
 "use client";
 
 // 분석·비교 (/analysis) — 과제 대시보드 항목 (docs/GUIDE.md §4.4).
-//  1. 하천 범람 vs 하천 범람 + 도시 침수: 원인 지도 / 밀어서 비교, 증감표 (비교는 이 두 조건만 — 2026-11-05 사용자 결정)
+//  1. 두 결과 비교: 기본은 하천 범람 vs 하천 범람 + 도시 침수(원인 지도·밀어서 비교·증감표).
+//     2026-11-17 사용자 요청으로 웹 계산 결과를 포함한 아무 두 결과도 고를 수 있게 함 (원인 지도는 미리 만든 기본 쌍만).
+//     고른 쌍은 주소에 ?a=…&b=… 로 남는다
 //  2. 시간별 변화: 침수면적·하천 유량·하천 수위·맨홀 유입·측방 구조물 (조건을 골라 겹쳐 보기)
 //  3. 해석 조건별 주요 결과 표 (게시된 조건 + 웹에서 계산이 끝난 결과)
 import { useEffect, useMemo, useState } from "react";
@@ -128,6 +130,7 @@ export default function AnalysisApp() {
   const [station, setStation] = useState<string>("");
   const [structure, setStructure] = useState<string>("");
   const [view, setView] = useState<BBox | null>(null);
+  const [sel, setSel] = useState<{ a: string; b: string } | null>(null);
 
   useEffect(() => {
     loadSummaries()
@@ -151,11 +154,39 @@ export default function AnalysisApp() {
         setStructure(lat?.name ?? "");
         const runs = await loadRunSummaries(version, model);
         if (runs.length) setList((l) => [...(l ?? []), ...runs]);
+        // 주소의 ?a=…&b=… (예: 방금 계산한 결과와 기준 비교 링크)
+        const q = new URLSearchParams(window.location.search);
+        const all = [...list, ...runs];
+        const qa = q.get("a"),
+          qb = q.get("b");
+        if (qa && qb && all.some((s) => s.ref.scenario_id === qa) && all.some((s) => s.ref.scenario_id === qb)) setSel({ a: qa, b: qb });
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   const pair = useMemo(() => (list ? basePair(list) : null), [list]);
+  // 지금 비교하는 두 결과 (고르지 않았으면 기본 쌍)
+  const cur = useMemo(() => {
+    if (!list) return null;
+    if (sel) {
+      const a = list.find((s) => s.ref.scenario_id === sel.a);
+      const b = list.find((s) => s.ref.scenario_id === sel.b);
+      if (a && b) return { a, b };
+    }
+    return pair;
+  }, [list, sel, pair]);
+  const isBase = !!(cur && pair && cur.a === pair.a && cur.b === pair.b);
+  const cmpCur = isBase ? cmp : null;
+  const pick = (side: "a" | "b", id: string) => {
+    if (!cur) return;
+    const next = { a: side === "a" ? id : cur.a.ref.scenario_id, b: side === "b" ? id : cur.b.ref.scenario_id };
+    setSel(next);
+    setPicked((p) => Array.from(new Set([...p, next.a, next.b])));
+    const q = new URLSearchParams(window.location.search);
+    q.set("a", next.a);
+    q.set("b", next.b);
+    window.history.replaceState(null, "", `?${q.toString()}`);
+  };
   const colors = useMemo(() => (list ? colorMap(list) : new Map<string, string>()), [list]);
   const R = useMemo(() => (list ? rows(list) : []), [list]);
   const shownList = (list ?? []).filter((s) => picked.includes(s.ref.scenario_id));
@@ -183,6 +214,7 @@ export default function AnalysisApp() {
       .map(({ s, v }) => ({ id: s.ref.scenario_id, name: nameOf(s), short: shortOf(s, pair), color: colors.get(s.ref.scenario_id) ?? "#888", values: v }));
 
   const bbox: BBox | null = cmp?.wet_bbox ?? view ?? pair?.b.tiles.bounds ?? null;
+  const optionLabel = (s: Summary) => (s.ref.run_id !== undefined ? `${shortLabel(s.ref.label)} (웹 계산)` : shortLabel(s.ref.label));
 
   return (
     <div className="run-app">
@@ -192,26 +224,60 @@ export default function AnalysisApp() {
           <div className="run-intro">
             <h1>분석·비교</h1>
             <p>
-              해석 조건별 주요 결과와 시간별 변화를 봅니다. 비교는 하천 범람만 넣은 계산과 맨홀 월류(도시 침수)를 함께 넣은 계산을 나란히 둡니다.
+              해석 조건별 주요 결과와 시간별 변화를 봅니다. 처음에는 하천 범람만 넣은 계산과 맨홀 월류(도시 침수)를 함께 넣은 계산을 나란히 두고, 웹에서 계산한
+              결과를 포함해 다른 두 조건도 골라 비교할 수 있습니다.
             </p>
           </div>
           {error && <p className="warn small">자료를 불러오지 못했습니다: {error}</p>}
           {!list && !error && <p className="muted">자료를 불러오는 중…</p>}
 
-          {list && pair && (
+          {list && pair && cur && (
             <section className="run-card" aria-labelledby="cmp-title">
               <div className="run-card-head">
                 <h2 id="cmp-title">
-                  {shortLabel(pair.a.ref.label)} vs {shortLabel(pair.b.ref.label)}
+                  {shortLabel(cur.a.ref.label)} vs {shortLabel(cur.b.ref.label)}
                 </h2>
                 <span className="muted small">모형 {version} · 최대 침수심 기준</span>
               </div>
+              <div className="cmp-pick">
+                <label className="field-inline">
+                  <span>기준 (왼쪽)</span>
+                  <select value={cur.a.ref.scenario_id} onChange={(e) => pick("a", e.target.value)}>
+                    {list.map((s) => (
+                      <option key={s.ref.scenario_id} value={s.ref.scenario_id} disabled={s === cur.b}>
+                        {optionLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-inline">
+                  <span>비교 (오른쪽)</span>
+                  <select value={cur.b.ref.scenario_id} onChange={(e) => pick("b", e.target.value)}>
+                    {list.map((s) => (
+                      <option key={s.ref.scenario_id} value={s.ref.scenario_id} disabled={s === cur.a}>
+                        {optionLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {!isBase && (
+                  <button type="button" className="link-btn" onClick={() => {
+                      setSel(null);
+                      const q = new URLSearchParams(window.location.search);
+                      q.delete("a");
+                      q.delete("b");
+                      window.history.replaceState(null, "", q.toString() ? `?${q.toString()}` : window.location.pathname);
+                    }}>
+                    기본 비교로
+                  </button>
+                )}
+              </div>
               <div className="cmp-tools">
                 <div className="seg" role="radiogroup" aria-label="지도 보기">
-                  <button type="button" role="radio" aria-checked={mode === "cause"} onClick={() => setMode("cause")} disabled={!cmp}>
+                  <button type="button" role="radio" aria-checked={mode === "cause" && !!cmpCur} onClick={() => setMode("cause")} disabled={!cmpCur}>
                     원인 지도
                   </button>
-                  <button type="button" role="radio" aria-checked={mode === "swipe"} onClick={() => setMode("swipe")}>
+                  <button type="button" role="radio" aria-checked={mode === "swipe" || !cmpCur} onClick={() => setMode("swipe")}>
                     밀어서 비교
                   </button>
                 </div>
@@ -230,20 +296,20 @@ export default function AnalysisApp() {
                 <div className="cmp-mapbox">
                   {bbox && (cmp || view) && (
                     <CompareMap
-                      a={pair.a}
-                      b={pair.b}
-                      aLabel={shortLabel(pair.a.ref.label)}
-                      bLabel={shortLabel(pair.b.ref.label)}
-                      causeTiles={cmp ? `${compareBase(version, pair.a.ref.scenario_id, pair.b.ref.scenario_id)}/tiles/{z}/{x}/{y}.png?v=${encodeURIComponent(cmp.generated_at)}` : null}
+                      a={cur.a}
+                      b={cur.b}
+                      aLabel={shortLabel(cur.a.ref.label)}
+                      bLabel={shortLabel(cur.b.ref.label)}
+                      causeTiles={cmpCur ? `${compareBase(version, pair.a.ref.scenario_id, pair.b.ref.scenario_id)}/tiles/{z}/{x}/{y}.png?v=${encodeURIComponent(cmpCur.generated_at)}` : null}
                       causeBounds={pair.b.tiles.bounds}
-                      mode={cmp ? mode : "swipe"}
+                      mode={cmpCur ? mode : "swipe"}
                       basemap={basemap}
                       bbox={bbox}
                     />
                   )}
                 </div>
                 <div className="cmp-side">
-                  {mode === "cause" && cmp ? (
+                  {mode === "cause" && cmpCur ? (
                     <>
                       <ul className="cause-legend">
                         {cmp.categories.map((c) => (
@@ -271,11 +337,12 @@ export default function AnalysisApp() {
                     <>
                       <p className="cmp-hint">가운데 선을 좌우로 밀면 같은 자리를 두 계산으로 비교할 수 있습니다.</p>
                       <dl className="facts">
-                        <dt>{shortLabel(pair.a.ref.label)} (왼쪽)</dt>
-                        <dd>{pair.a.kpi.inundation_area_km2["ge_0.1m"].toFixed(2)} km²</dd>
-                        <dt>{shortLabel(pair.b.ref.label)} (오른쪽)</dt>
-                        <dd>{pair.b.kpi.inundation_area_km2["ge_0.1m"].toFixed(2)} km²</dd>
+                        <dt>{shortLabel(cur.a.ref.label)} (왼쪽)</dt>
+                        <dd>{cur.a.kpi.inundation_area_km2["ge_0.1m"].toFixed(2)} km²</dd>
+                        <dt>{shortLabel(cur.b.ref.label)} (오른쪽)</dt>
+                        <dd>{cur.b.kpi.inundation_area_km2["ge_0.1m"].toFixed(2)} km²</dd>
                       </dl>
+                      {!isBase && <p className="muted small">원인 지도(하천 범람만·도시 침수로 더 깊어짐·도시 침수만)는 기본 두 조건으로만 미리 만들어 두었습니다.</p>}
                       <p className="muted small">색은 최대 침수심 등급 (0.1–0.5 / 0.5–1 / 1–2 / 2 m 이상, 진할수록 깊음).</p>
                     </>
                   )}
@@ -288,16 +355,16 @@ export default function AnalysisApp() {
                   <thead>
                     <tr>
                       <th scope="col">항목</th>
-                      <th scope="col">{shortLabel(pair.a.ref.label)}</th>
-                      <th scope="col">{shortLabel(pair.b.ref.label)}</th>
+                      <th scope="col">{shortLabel(cur.a.ref.label)}</th>
+                      <th scope="col">{shortLabel(cur.b.ref.label)}</th>
                       <th scope="col">차이</th>
                       <th scope="col">증감률</th>
                     </tr>
                   </thead>
                   <tbody>
                     {R.map((r) => {
-                      const va = r.get(pair.a);
-                      const vb = r.get(pair.b);
+                      const va = r.get(cur.a);
+                      const vb = r.get(cur.b);
                       const d = diff(r, va, vb);
                       return (
                         <tr key={r.key}>
