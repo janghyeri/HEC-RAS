@@ -375,7 +375,9 @@ def run_job(job):
 
 #### 4.3.3 선택 ① — MCP 서버 (가점 요소)
 
-참고 발표자료의 SWMM-MCP처럼, 워커 기능을 **FastMCP** 도구로 감싸 AI가 자연어로 HEC-RAS를 다루게 한다.
+참고 발표자료의 SWMM-MCP처럼, 워커 기능을 MCP 도구로 감싸 AI가 자연어로 HEC-RAS를 다루게 한다.
+
+> **구현 (2026-11-18)** `mcp/hinnamno_mcp.py` — FastMCP 대신 외부 패키지 없는 표준 라이브러리 stdio 서버(PC 설치 부담 없음). 웹과 같은 공개(anon) 키 + 익명 로그인만 쓰고 service_role은 쓰지 않는다(대기 제한·같은 조건 재사용은 RLS 그대로). 도구: `describe_model`, `list_results`, `get_kpi`, `compare_results`, `get_timeseries_summary`(기간·단면), `request_run`(confirm=false면 조건·해시만, true일 때만 대기열), `get_run_status`, `worker_status`. 조건 해시는 웹 계산 1의 값과 일치 확인. 아래 표의 `get_point_timeseries`·`plot_flood_map`은 아직 없음.
 
 | 도구 | 기능 |
 |---|---|
@@ -569,7 +571,7 @@ HEC-RAS/                  # https://github.com/janghyeri/HEC-RAS
 ├─ web/                   # Next.js + shadcn/ui + MapLibre/deck.gl
 ├─ worker/                # Python: 작업 조회·HEC-RAS 실행·결과 업로드
 ├─ pipeline/              # HDF → 웹 형식 변환 (워커와 공유)
-├─ mcp/                   # (선택) FastMCP 서버
+├─ mcp/                   # (선택) MCP 서버 (표준 라이브러리 stdio)
 ├─ supabase/              # migrations (테이블 정의)
 └─ data/                  # HEC-RAS 원자료는 .gitignore, 작은 샘플만 커밋
 ```

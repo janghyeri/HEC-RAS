@@ -17,12 +17,12 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 ## 구조
 - web/: Next.js(App Router, TS) + shadcn/ui + MapLibre GL(2D, 브이월드 항공사진) + 브이월드 WebGL 3D 지도(3D, Cesium 기반), Supabase 연동. 3D 화면의 물은 수심을 지면에 덮어 그리고 숫자는 2 m DEM 기준 (docs/GUIDE.md §4.4.5). Vercel Root Directory = web, 배포 주소 https://hinnamno-flood.vercel.app (프로젝트 hinnamno-flood)
 - web/app/run (components/RunApp.tsx, lib/supabase.ts·runConfig.ts): 조건 설정·실행. 로그인은 Supabase 익명 로그인(2026-11-02 결정), supabase-js 없이 REST. 입력 범위는 /data/<버전>/model.json의 run 블록(= pipeline/models/<버전>.json), 조건 해시는 worker/hecras_job.py params_hash와 같은 글자로 계산(바꾸면 둘 다). 결과는 지도 `/?run=<번호>` (Storage results/<버전>/run-<id>/)
-- web/app/analysis (AnalysisApp·CompareMap·LineChart, lib/summary.ts): 분석·비교 — 비교는 하천 범람 vs 하천 범람 + 도시 침수만(2026-11-05 사용자 결정), 원인 지도 타일은 pipeline/compare_web.py
+- web/app/analysis (AnalysisApp·CompareMap·LineChart, lib/summary.ts): 분석·비교 — 아무 두 결과 비교(웹 계산 포함, 2026-11-17), 원인 지도는 기본 쌍만(pipeline/compare_web.py). 시간별 변화는 기간(시작–끝)·하천 단면 선택에 따라 그래프와 '기간 요약'이 바뀜(2026-11-18)
 - web/app/3d/route.ts + public/view3d/: 3D 재현. 브이월드 초기화 스크립트가 document.write를 써서 React 페이지가 아니라 HTML을 직접 돌려준다. 시간대별 이미지는 각 결과의 frames/(4 m 등급)·depth2m/(2 m 연속 수심 + max.png, 3D 물이 이것을 씀 — DEPTH_SRC: 연속 파랑·0.5/1/2 m 등수심선) (pipeline/frames_web.py, 경위도 격자). 웹 수심 이미지(frames/·depth2m/·tiles/)는 경사 수면(pipeline/sloping.py, RAS Mapper sloping과 같은 원리 — 2026-11-17 사용자 결정), KPI는 셀 기준 그대로. '물 높이 3D'(view3d.js SHEET_SRC·buildSheet, buildings.js hnFlood): 수면 = 브이월드 지면(sampleTerrain 15) + 수심, 건물 벽은 둘레 수심까지 잠긴 색, 하천(1D) 물은 data/v1/area2d_2m.png로 빼고 세우지 않음. 흐름 보기(3D에만): river_flow.json(pipeline/river_flow.py) + flow2d.json·bin(pipeline/flow2d_web.py, Face Velocity → 셀 유속). 건물은 public/view3d/buildings.js가 GIS건물통합정보(브이월드 데이터 API LT_C_BLDGINFO, JSONP)로 직접 세움 — 실패 시 브이월드 LoD1 상자. 셰이더를 고치면 배포 화면에서 그리기 오류가 없는지 꼭 확인 (오류 나면 Cesium이 화면 갱신을 멈춤 — 숨은 브라우저 창에서는 viewer.render()를 직접 불러야 그려짐)
 - 행정구역: web/public/data/admin/boundaries.geojson (pipeline/admin_web.py, 통계청 SGIS 행정동 2022-07 / vuski/admdongkor 가공, 출처 표시 필수)
 - worker/: Python, ras-commander로 HEC-RAS 실행, HDF 읽기 (Windows PC). 워커 PC에서는 start_worker.bat(worker/start_worker.bat 사본) 더블클릭
 - pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임/KPI JSON) 변환. 하천(1D) 수면 지도는 pipeline/river_map.py·river_publish.py (단면 수위 보간, 침수면적 KPI에는 미포함)
-- mcp/: (선택) FastMCP 서버
+- mcp/: (선택) MCP 서버 mcp/hinnamno_mcp.py — 표준 라이브러리 stdio(JSON-RPC), 웹과 같은 공개 키+익명 로그인, 도구 8개(조회·비교·기간 요약·계산 요청은 confirm 2단계·상태). 시험 mcp/tests/test_mcp.py(가짜 사이트·Supabase). PC 사본 C:\Hec-Ras\HECRASMCP\code\mcp, 확인 mcp_check.bat (2026-11-18)
 - supabase/: 테이블 정의 (docs/GUIDE.md §5.2)
 
 ## 작업 방식 (과목 강의자료 기준, 상세: 로컬 '1. 과정/03_강의자료 방법 적용.md')
