@@ -1796,6 +1796,22 @@ a:hover {
   grid-column: 1 / -1;
 }
 
+.period-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 2px 0 10px;
+}
+
+.period-row .field-inline {
+  margin-top: 0;
+}
+
+.kpi-table.period {
+  margin-bottom: 14px;
+}
+
 .field-inline {
   display: inline-flex;
   align-items: center;

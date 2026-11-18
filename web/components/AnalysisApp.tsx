@@ -5,6 +5,7 @@
 //     2026-11-17 사용자 요청으로 웹 계산 결과를 포함한 아무 두 결과도 고를 수 있게 함 (원인 지도는 미리 만든 기본 쌍만).
 //     고른 쌍은 주소에 ?a=…&b=… 로 남는다
 //  2. 시간별 변화: 침수면적·하천 유량·하천 수위·맨홀 유입·측방 구조물 (조건을 골라 겹쳐 보기)
+//     2026-11-18: 기간(시작–끝 시각)을 고르면 그래프와 '기간 요약'(기간 안 최댓값·시각, 맨홀 유입량)이 함께 바뀐다
 //  3. 해석 조건별 주요 결과 표 (게시된 조건 + 웹에서 계산이 끝난 결과)
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
@@ -39,6 +40,28 @@ interface Row {
 
 function minutes(a: string, b: string): number {
   return Math.round((Date.parse(b) - Date.parse(a)) / 60000);
+}
+
+/** 구간 [i0, i1] 안 최댓값과 그 위치 (값이 없으면 null) */
+function peakIn(v: (number | null)[] | null | undefined, i0: number, i1: number): { v: number; i: number } | null {
+  if (!v) return null;
+  let best: { v: number; i: number } | null = null;
+  for (let i = i0; i <= i1 && i < v.length; i++) {
+    const x = v[i];
+    if (x !== null && Number.isFinite(x) && (best === null || x > best.v)) best = { v: x, i };
+  }
+  return best;
+}
+
+/** 구간 [i0, i1] 유량(m³/s)을 사다리꼴로 적분한 체적 (m³) */
+function volumeIn(q: number[] | null | undefined, times: string[], i0: number, i1: number): number | null {
+  if (!q || q.length < 2) return null;
+  let vol = 0;
+  for (let i = i0; i < i1 && i + 1 < q.length; i++) {
+    const dt = (Date.parse(times[i + 1]) - Date.parse(times[i])) / 1000;
+    vol += ((q[i] + q[i + 1]) / 2) * dt;
+  }
+  return vol;
 }
 
 function lateralRs(name: string): string {
@@ -134,6 +157,7 @@ export default function AnalysisApp() {
   const [structure, setStructure] = useState<string>("");
   const [view, setView] = useState<BBox | null>(null);
   const [sel, setSel] = useState<{ a: string; b: string } | null>(null);
+  const [win, setWin] = useState<[number, number] | null>(null); // 기간 (시각 번호), null = 전체
 
   useEffect(() => {
     loadSummaries()
@@ -210,11 +234,24 @@ export default function AnalysisApp() {
     return out;
   }, [list, stations]);
 
+  // 기간: 시각 번호 [w0, w1] (기본 = 전체)
+  const nT = times.length;
+  const w1 = win ? Math.min(win[1], nT - 1) : nT - 1;
+  const w0 = win ? Math.max(0, Math.min(win[0], w1 - 1)) : 0;
+  const wt = times.slice(w0, w1 + 1);
+  const whole = w0 === 0 && w1 === nT - 1;
+
   const mk = (pick: (s: Summary) => (number | null)[] | null): Series[] =>
     shownList
       .map((s) => ({ s, v: pick(s) }))
       .filter((x): x is { s: Summary; v: (number | null)[] } => x.v !== null)
-      .map(({ s, v }) => ({ id: s.ref.scenario_id, name: nameOf(s), short: shortOf(s, pair), color: colors.get(s.ref.scenario_id) ?? "#888", values: v }));
+      .map(({ s, v }) => ({
+        id: s.ref.scenario_id,
+        name: nameOf(s),
+        short: shortOf(s, pair),
+        color: colors.get(s.ref.scenario_id) ?? "#888",
+        values: v.slice(w0, w1 + 1),
+      }));
 
   const bbox: BBox | null = cmp?.wet_bbox ?? view ?? pair?.b.tiles.bounds ?? null;
   const optionLabel = (s: Summary) => (s.ref.run_id !== undefined ? `${shortLabel(s.ref.label)} (웹 계산)` : shortLabel(s.ref.label));
@@ -418,16 +455,102 @@ export default function AnalysisApp() {
                   );
                 })}
               </div>
+              <div className="period-row" role="group" aria-label="기간">
+                <label className="field-inline">
+                  <span>기간</span>
+                  <select
+                    aria-label="기간 시작 시각"
+                    value={w0}
+                    onChange={(e) => {
+                      const a = Number(e.target.value);
+                      setWin([a, Math.max(a + 1, w1)]);
+                    }}
+                  >
+                    {times.slice(0, -1).map((t, i) => (
+                      <option key={t} value={i}>
+                        {hhmm(t)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="muted" aria-hidden="true">
+                  –
+                </span>
+                <label className="field-inline">
+                  <span className="sr-only">기간 끝</span>
+                  <select
+                    aria-label="기간 끝 시각"
+                    value={w1}
+                    onChange={(e) => {
+                      const b = Number(e.target.value);
+                      setWin([Math.min(w0, b - 1), b]);
+                    }}
+                  >
+                    {times.map((t, i) =>
+                      i > w0 ? (
+                        <option key={t} value={i}>
+                          {hhmm(t)}
+                        </option>
+                      ) : null,
+                    )}
+                  </select>
+                </label>
+                <button type="button" className="chip-btn" aria-pressed={whole} onClick={() => setWin(null)}>
+                  전체
+                </button>
+                <span className="muted small">그래프와 아래 기간 요약이 함께 바뀝니다 · 하천 값은 고른 단면 기준</span>
+              </div>
+              {shownList.length > 0 && (
+                <div className="table-scroll">
+                  <table className="kpi-table period">
+                    <caption className="sr-only">기간 요약</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">
+                          기간 요약 {hhmm(times[w0])}–{hhmm(times[w1])}
+                        </th>
+                        <th scope="col">최대 침수면적 (km²)</th>
+                        <th scope="col">하천 최대유량 RS {station} (m³/s)</th>
+                        <th scope="col">하천 최고수위 RS {station} (EL. m)</th>
+                        <th scope="col">맨홀 유입량 (만 m³)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shownList.map((s) => {
+                        const ts = s.ts;
+                        const area = peakIn(ts?.["inundation_area_ge_0.1m_km2"], w0, w1);
+                        const q = ts && stIdx >= 0 ? peakIn(ts.river_flow_m3s.map((r) => r[stIdx]), w0, w1) : null;
+                        const ws = ts && stIdx >= 0 ? peakIn(ts.river_ws_m.map((r) => r[stIdx]), w0, w1) : null;
+                        const mh = (s.kpi.internal_inflow?.count ?? 0) > 0 && ts ? volumeIn(ts.internal_inflow_total_m3s, ts.times, w0, w1) : null;
+                        const at = (p: { v: number; i: number } | null, d: number) =>
+                          p ? `${p.v.toLocaleString("ko-KR", { minimumFractionDigits: d, maximumFractionDigits: d })} (${hhmm(times[p.i])})` : "—";
+                        return (
+                          <tr key={s.ref.scenario_id}>
+                            <th scope="row">
+                              <i className="col-key" style={{ background: colors.get(s.ref.scenario_id) }} aria-hidden="true" />
+                              {nameOf(s)}
+                            </th>
+                            <td>{at(area, 2)}</td>
+                            <td>{at(q, 0)}</td>
+                            <td>{at(ws, 2)}</td>
+                            <td>{mh === null ? "—" : (mh / 1e4).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               {shownList.length === 0 ? (
                 <p className="muted">위에서 해석 조건을 하나 이상 고르세요.</p>
               ) : (
                 <div className="chart-grid">
-                  <LineChart title="침수면적 (0.1 m 이상)" unit="km²" digits={2} times={times} series={mk((s) => s.ts?.["inundation_area_ge_0.1m_km2"] ?? null)} />
+                  <LineChart title="침수면적 (0.1 m 이상)" unit="km²" digits={2} times={wt} series={mk((s) => s.ts?.["inundation_area_ge_0.1m_km2"] ?? null)} />
                   <LineChart
                     title="맨홀 유입 유량 (274곳 합계)"
                     unit="m³/s"
                     digits={1}
-                    times={times}
+                    times={wt}
                     series={mk((s) => ((s.kpi.internal_inflow?.count ?? 0) > 0 ? s.ts?.internal_inflow_total_m3s ?? null : null))}
                     note="하천 범람만 넣은 계산에는 맨홀 유입이 없습니다"
                   />
@@ -454,7 +577,7 @@ export default function AnalysisApp() {
                     title={`하천 유량 · RS ${station}`}
                     unit="m³/s"
                     digits={0}
-                    times={times}
+                    times={wt}
                     series={mk((s) => (s.ts && stIdx >= 0 ? s.ts.river_flow_m3s.map((r) => r[stIdx]) : null))}
                   />
                   <LineChart
@@ -462,7 +585,7 @@ export default function AnalysisApp() {
                     unit="EL. m"
                     digits={2}
                     zero={false}
-                    times={times}
+                    times={wt}
                     series={mk((s) => (s.ts && stIdx >= 0 ? s.ts.river_ws_m.map((r) => r[stIdx]) : null))}
                   />
                   {structure && (
@@ -471,7 +594,7 @@ export default function AnalysisApp() {
                         title={`측방 구조물 RS ${lateralRs(structure)} 유량 (+ 하천 → 시가지)`}
                         unit="m³/s"
                         digits={1}
-                        times={times}
+                        times={wt}
                         series={mk((s) => s.ts?.lateral_flow_m3s?.[structure] ?? null)}
                         note="참고값 — 계산 중 10분 값이 크게 오르내리는 구간이 있습니다"
                       />
