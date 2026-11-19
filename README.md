@@ -1,79 +1,170 @@
-# 힌남노 침수 다시보기 · Hinnamno Flood Replay
+# 힌남노 침수 다시보기
 
-2022년 태풍 힌남노 때 포항 냉천 유역의 **HEC-RAS 6.6 1D–2D 외수·내수 침수해석**을 웹에서
-**조건 설정 → 모델 실행 → 지도·3D 시각화 → 시나리오 비교**까지 할 수 있게 연결한 웹서비스.
-웹에서 누른 조건으로 연구실 PC의 HEC-RAS가 실제로 다시 계산하고, 결과는 약 9분 뒤 대시보드에 자동으로 올라온다.
+2022년 9월 6일 태풍 힌남노 때 포항 냉천이 넘치고 도심 맨홀에서 물이 솟아 오천읍·청림동 일대가 잠겼습니다.
+이 저장소는 그때의 침수를 HEC-RAS로 해석한 모형을 웹에 연결한 서비스의 코드입니다.
+웹에서 조건(상류 유입량, 맨홀 월류량, 하구 조위)을 바꾸면 연구실 PC의 HEC-RAS가 실제로 다시 계산하고,
+약 9분 뒤 결과가 지도·그래프·3D 화면에 올라옵니다.
 
-> 경북대학교 CVLE0764 개수로 및 유사이동론 (김병현 교수님) · 2026-2학기 과제
-> "바이브 코딩을 활용한 수리·수문 모델 기반 웹앱 개발 및 배포" · 장혜리
+- 웹 주소: https://hinnamno-flood.vercel.app
+- 만든 사람: 장혜리 (경북대학교 토목공학과 수자원 연구실)
+- 경북대학교 「개수로 및 유사이동론」(CVLE0764, 김병현 교수님) 2026-2학기 과제
+  "바이브 코딩을 활용한 수리·수문 모델 기반 웹앱 개발 및 배포"로 만들었습니다.
 
-## 과제 요구와 구현
+## 왜 만들었나
 
-| 요구 | 구현 | 코드 |
+침수 해석 결과는 보통 연구자 컴퓨터 안의 그림과 표로 끝납니다. 이 서비스는 두 가지를 하려고 만들었습니다.
+
+1. **결과를 누구나 볼 수 있게.** 주소를 검색하면 우리 동네가 몇 시부터 얼마나 잠겼는지, 건물이 어느 높이까지 잠겼는지를
+   지도와 3D로 볼 수 있습니다.
+2. **모형을 웹에서 다시 돌려 볼 수 있게.** 하천이 넘친 물(외수, 화면에서는 '하천 범람')과 맨홀에서 솟은 물(내수, '도시 침수')을
+   나눠 계산해 원인별 차이를 보고, 유입량이나 조위를 바꿨을 때 결과가 어떻게 달라지는지 비교할 수 있습니다.
+   계산 결과는 하천 흔적수위 같은 실측 자료와 바로 비교해 모형의 부족한 점을 찾는 데에도 씁니다.
+
+## 화면
+
+| 화면 | 주소 | 할 수 있는 것 |
 |---|---|---|
-| (1) 모의조건 설정 | 상류·측방 유입 ×0.5–1.5, 맨홀 월류량 ×0.5–1.5, 하류 조위 +0–1.0 m (범위는 `pipeline/models/v1.json`) | `web/app/run`, `web/components/RunApp.tsx` |
-| (2) 모델 실행 | Supabase 대기열 → Windows 워커가 기준 모형을 복사·u01 수정 → `Ras.exe -c` → 결과 HDF 완료 확인 | `worker/run_worker.py`, `worker/hecras_job.py` |
-| (3) 결과 시각화 | KPI 표, 최대 침수심 지도(2 m 지형·경사 수면), 10분 재생, 지점 수심 시계열, 하천 유량·수위, 3D 물 높이·건물 잠김 | `web/components/FloodMapApp.tsx`, `web/app/3d`, `web/public/view3d` |
-| (4) 시나리오 비교 | 아무 두 결과(웹 계산 포함) 스와이프 비교·KPI 증감표, 기간·단면 선택에 따른 그래프·기간 요약, 원인 지도 | `web/components/AnalysisApp.tsx`, `pipeline/compare_web.py` |
-| 검증 | 하천 흔적수위 vs 결과별 최고수위(웹 계산 포함, 화면에서 계산), 변환 정확성·재현성·체적오차 표 | `web/components/ValidationApp.tsx`, `pipeline/trace_levels.py` |
-| (5) 배포 | GitHub → Vercel 자동 배포, `supabase/migrations` → DB 자동 반영 | `web/`, `supabase/` |
-| (선택) MCP | AI가 자연어로 결과 조회·조건 실행 요청 (표준 라이브러리만 쓰는 stdio 서버) | `mcp/` |
+| 침수 지도 | `/` | 최대 침수심 지도, 10분 단위 재생, 주소 검색, 지점을 누르면 수심 변화 그래프, 주요 결과 표 |
+| 조건 설정·실행 | `/run` | 기준 계산을 고르고 조건 4개를 바꿔 계산 요청, 진행 상태·로그 보기 |
+| 분석·비교 | `/analysis` | 아무 두 결과를 나란히 비교(웹에서 계산한 결과 포함), 증감표, 원인 지도, 기간·하천 단면·측방 구조물을 골라 그래프 보기 |
+| 3D 재현 | `/3d` | 건물 사이로 물이 찬 높이, 건물 둘레 수심, 시간대별 재생, 흐름 보기 |
+| 검증 | `/validation` | 하천 흔적수위(2022.9.13 현장조사)와 결과별 최고수위 비교, 변환·재현성·체적오차 표 |
 
-## 구성
+휴대폰에서도 볼 수 있고, '홈 화면에 추가'로 앱처럼 열 수 있습니다.
+
+## 어떻게 돌아가나
 
 ```
-브라우저 (Next.js, Vercel) ──요청──▶ Supabase (runs 대기열 · Storage · 익명 로그인)
-        ▲                                        │ 작업 가져감 / 결과 업로드
-        └──────────── 결과 읽기 ◀────────────────┘
-                                          계산 워커 (Windows PC, HEC-RAS 6.6, Python)
+ 브라우저 ──(1) 계산 요청──▶ Supabase ◀──(2) 대기 작업 가져감── 계산 PC (Windows, HEC-RAS 6.6)
+ (Vercel의 Next.js 웹)        runs 표 · 결과 저장소              │ (3) 기준 모형 복사 → 입력 수정 → Ras.exe 계산
+        ▲                                                        │ (4) 결과 HDF → 지도 타일·수심 이미지·KPI
+        └──────────(5) 결과 읽기 ◀── Storage ◀── 업로드 ──────────┘
 ```
 
-| 폴더 | 내용 | 실행 위치 |
-|---|---|---|
-| `web/` | Next.js 웹앱 — 조건 설정·실행, 침수 지도, 분석·비교, 3D 재현 | Vercel (Root Directory = `web`) |
-| `worker/` | HEC-RAS 실행 워커 — 작업 조회·입력 수정·계산·결과 업로드 (`start_worker.bat`) | HEC-RAS 6.6 설치 Windows PC |
-| `pipeline/` | 결과 HDF → 웹 형식 (KPI, 지도 타일, 10분 수심 이미지, 경사 수면, 하천 시계열, 침수 건물 수) | 워커와 공유 |
-| `mcp/` | (선택) MCP 서버 — 결과 조회·비교·실행 요청 | 로컬 (Claude Desktop 등) |
-| `supabase/` | DB 테이블·권한 정의 | Supabase |
-| `docs/` | 설계 문서 `GUIDE.md`, 기능 명세 `PRD.md`, 계획 `PLAN.md` | — |
-| `.claude/skills/` | 반복 절차 Skill (`hdf-to-web`, `hecras-run`, `deploy`, `ai-log`) | Claude Code |
+웹 서버는 계산하지 않습니다. 요청은 Supabase의 표에 쌓이고, HEC-RAS가 깔린 연구실 PC의 Python 워커가 하나씩 가져가
+계산한 뒤 결과 파일을 올립니다. 그래서 계산 PC가 꺼져 있어도 미리 계산해 둔 결과는 계속 볼 수 있습니다.
+같은 조건을 다시 요청하면 계산하지 않고 이전 결과를 보여 줍니다.
 
-## 모형
+| 역할 | 쓴 것 |
+|---|---|
+| 화면 | Next.js(TypeScript), MapLibre GL, 브이월드 항공사진·WebGL 3D 지도 |
+| 대기열·저장·로그인 | Supabase (Postgres 표와 권한 규칙, Storage, 익명 로그인) |
+| 계산 | HEC-RAS 6.6 명령줄(`Ras.exe -c`), Python(numpy, h5py, Pillow) |
+| 배포 | GitHub에 올리면 Vercel이 웹을, Supabase가 `supabase/migrations`의 DB 변경을 자동 반영 |
+| AI 연계(선택) | MCP 서버 — Claude 같은 AI가 대화로 결과를 조회하고 계산을 요청 |
+
+## 모형과 주의할 점
+
+모형은 아래 논문의 모형을 웹 실행용으로 정리한 HEC-RAS 6.6 1차원–2차원 결합 모형(v1)입니다.
+
+> 장혜리, 유재환, 이창희, 김병현 (2025). HEC-RAS 2D를 이용한 냉천 유역 해안도시 복합 침수 모델링.
+> 한국수자원학회논문집, 58(S-4), 1617–1627. https://doi.org/10.3741/JKWRA.2025.58.S-4.1617
 
 | 항목 | 내용 |
 |---|---|
-| 1D 하천 | 냉천 RS 13.434(상류) → 0.000(하구) |
-| 2D 범람원 | 좌안 18,087 + 우안 25,861 = 43,948셀, 2 m DEM, EPSG:5187 |
-| 1D–2D 연결 | 측방 구조물 RS 7.64(우안)·7.65(좌안) |
-| 기준 계산 | 외수 NC090901(S0-E), 외수+내수 NC090902(S0-C, 맨홀 274개 월류 유량) |
-| 모의 기간 | 2022-09-06 02:00–13:30, 지도 출력 10분(70장) |
+| 하천(1D) | 냉천 RS 13.434(상류) → 0.000(하구) |
+| 범람원(2D) | 좌안 18,087셀 + 우안 25,861셀, 2 m 지형, 좌표계 EPSG:5187 |
+| 하천–범람원 연결 | 측방 구조물 RS 7.64(우안), 7.65(좌안) |
+| 계산 두 가지 | 외수만(NC090901), 외수 + 내수(NC090902, 맨홀 274곳 월류 유량) |
+| 모의 기간 | 2022-09-06 02:00–13:30, 10분 간격 70장 |
+| 계산 시간 | 24코어 PC에서 1회 약 9분 (HEC-RAS 6~8분 + 변환·업로드) |
 
-자세한 내용은 [`docs/GUIDE.md`](docs/GUIDE.md) §4.1. 수리학적 정의(침수 기준 수심 0.1 m, KPI 공식)는 §4.4.1.
+HEC-RAS를 처음 다루던 시기에 구축한 모형이라 틀린 부분이 있을 수 있습니다. 웹에서 실측 자료와 비교해 다음을 확인했고,
+보완한 모형(v2)이 나오면 결과만 교체합니다.
 
-## 검증 (요약)
+- 하천 수위가 흔적수위(22곳)보다 대체로 낮습니다. RMSE 1.01 m, 평균 0.82 m 낮음, 22곳 중 20곳에서 낮음.
+- 좌안 범람원은 측방 구조물 RS 7.65 하나로만 하천과 이어져 있고, 같은 입력에서도 실행마다 월류 방향이 바뀝니다(좌안 체적오차 약 10 %).
+- 침수 범위를 맞춰 볼 2022년 포항 침수흔적도는 재난안전데이터공유플랫폼에 없어 비교하지 못했습니다.
 
-| 단계 | 결과 |
+침수 기준 수심(0.1 m)과 각 지표의 계산 방법은 [`docs/GUIDE.md`](docs/GUIDE.md) §4.4.1에 정리했습니다.
+
+## 저장소 구성
+
+| 폴더 | 내용 |
 |---|---|
-| 변환 정확성 | 웹 지도 면적 vs 2 m 래스터 +0.17~0.21 %, 0.1 m 이상 셀 수 브라우저 = 파이썬 |
-| 실행 재현성 | 기준 복사본 재실행 침수면적 ±0.3 %, 셀 최대수위 차이 99분위 ≤ 0.017 m (`worker/compare_results.py`) |
-| 모델 정확성 | 하천 흔적수위(한국수자원조사기술원 2022.9.13 현장조사, 22개) RMSE / 편의: 하천 범람 + 도시 침수 1.01 / −0.82 m, 하천 범람만 1.04 / −0.86 m (`pipeline/trace_levels.py`, 웹 `/validation`). 체적오차 전체 1.02 % (S0-C), 좌안 2D 10.1 % — 측방 구조물 RS 7.65 불안정. 실제 침수 범위 비교(침수흔적도)는 재난안전데이터공유플랫폼에 2022년 포항 자료가 없어 하지 않음 |
+| [`web/`](web/) | 웹앱 (Next.js). 미리 계산한 결과 자료가 `web/public/data/`에 들어 있습니다 |
+| [`worker/`](worker/) | 계산 PC에서 도는 워커 — 요청을 가져와 HEC-RAS를 돌리고 결과를 올립니다 |
+| [`pipeline/`](pipeline/) | HEC-RAS 결과 파일(HDF)을 웹에서 쓰는 형식(지도 타일, 수심 이미지, KPI)으로 바꿉니다 |
+| [`supabase/`](supabase/) | DB 표와 권한 규칙 |
+| [`mcp/`](mcp/) | (선택) AI가 대화로 결과를 조회·비교하고 계산을 요청하는 MCP 서버 |
+| [`docs/`](docs/) | 설계 기록 — 가이드라인(`GUIDE.md`), 기능 명세(`PRD.md`), 작업 계획(`PLAN.md`) |
+| `CLAUDE.md`, `.claude/skills/` | 개발에 쓴 AI 코딩 도구(Claude Code)가 읽는 작업 지침과 반복 절차 |
 
-## 실행
+HEC-RAS 원자료(모형 파일, 결과 HDF, 지형)와 비밀 키는 저장소에 올리지 않았습니다.
 
-- **웹 (개발)**: `cd web && npm install && npm run dev` — `web/.env.example`을 `web/.env.local`로 복사해 키를 넣는다.
-- **워커 (Windows PC)**: `worker/.env.example` → `worker/.env` (service_role 키는 이 PC에만), `start_worker.bat` 더블클릭.
-- **로컬 계산·비교**: `python -m worker.run_local --name <이름> --base S0-C --set internal_flow_factor=1.5 --compare --export`
-- **시험**: `python -m pytest pipeline/tests`
+## 직접 실행해 보기
 
-## 데이터 정책과 출처
+필요한 정도에 따라 세 단계로 나눴습니다. 1단계만으로도 지도·비교·3D·검증 화면은 모두 볼 수 있습니다.
 
-- HEC-RAS 원자료(`*.hdf`, `*.dss`, 지형 `*.tif`)와 키·비밀값은 저장소에 올리지 않는다. 웹에는 변환된 결과만 올린다.
+### 1단계 — 웹 화면만 (HEC-RAS 없이)
+
+Node.js 20 이상이 필요합니다.
+
+```bash
+cd web
+npm install
+npm run dev          # http://localhost:3000
+```
+
+미리 계산한 결과 네 개(외수만, 외수 + 내수, 맨홀 ×0.5, 맨홀 ×1.5)가 `web/public/data/v1/`에 들어 있어 바로 볼 수 있습니다.
+브이월드 인증키가 없으면 배경지도는 OpenStreetMap으로 바뀌고, 3D 화면과 주소 검색은 동작하지 않습니다.
+키는 [브이월드](https://www.vworld.kr)에서 서비스 URL을 `http://localhost:3000`으로 해서 발급받아
+`web/.env.example`을 `web/.env.local`로 복사한 뒤 `NEXT_PUBLIC_VWORLD_KEY`에 넣습니다.
+
+### 2단계 — 계산 요청 받기 (Supabase)
+
+1. [Supabase](https://supabase.com)에서 프로젝트를 만듭니다.
+2. Authentication → Sign In / Providers에서 **Anonymous sign-ins**를 켭니다. 웹은 계산을 요청할 때만 익명으로 로그인합니다.
+3. 표와 권한 규칙을 만듭니다. Supabase CLI를 쓰면 저장소 루트에서
+   `supabase link --project-ref <프로젝트 ID>` 후 `supabase db push`,
+   CLI 없이 하려면 `supabase/migrations/` 안의 SQL을 대시보드 SQL Editor에 붙여 넣어 실행합니다.
+4. Project Settings → API의 URL과 공개(anon) 키를 `web/.env.local`의
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`에 넣습니다.
+
+여기까지 하면 `/run`에서 계산을 요청할 수 있고, 요청은 대기열에 쌓입니다. 실제 계산은 3단계의 계산 PC가 있어야 합니다.
+
+### 3단계 — 실제로 계산하기 (Windows + HEC-RAS)
+
+필요한 것: Windows PC, HEC-RAS 6.6, Python 3.9 이상(Anaconda 가능), 그리고 HEC-RAS 모형 폴더.
+모형 파일은 저장소에 없으므로, 자신의 HEC-RAS 프로젝트를 쓰려면 `pipeline/models/v1.json`을 그 모형에 맞게 고쳐야 합니다
+(기준 모형 위치 `base_path`, 프로젝트·계획 파일, 웹에서 바꿀 조건과 범위).
+
+1. 모형 폴더를 **영어로만 된 경로**에 둡니다(예: `C:\Hec-Ras\HECRASMCP\Pohang_web`). HEC-RAS는 한글 경로에서 불안정합니다.
+   원본은 그대로 두고 복사본을 씁니다. 워커는 계산할 때마다 이 복사본을 다시 작업 폴더로 복사하므로 복사본도 바뀌지 않습니다.
+2. 패키지를 설치합니다: `pip install -r pipeline/requirements.txt`
+3. `worker/.env.example`을 `worker/.env`로 복사하고 Supabase URL과 **service_role 키**(계산 PC에만 둡니다), HEC-RAS 위치(`RAS_EXE`),
+   작업 폴더(`JOBS_DIR`)를 넣습니다.
+4. 먼저 Supabase 없이 한 번 돌려 봅니다(저장소 루트에서):
+   ```
+   python -m worker.run_local --name test1 --base S0-C --set internal_flow_factor=1.5 --compare --export
+   ```
+   기준 결과와의 차이, 빠진 결과 자료, 웹 파일이 작업 폴더에 남습니다.
+5. 워커를 켭니다: `python -m worker.run_worker` (계속 켜 두면 웹 요청을 하나씩 처리합니다).
+   `worker/start_worker.bat`은 이것을 더블클릭으로 켜고, 멈추면 30초 뒤 다시 켜는 배치 파일입니다.
+   계산 PC 폴더 맨 위(예: `C:\Hec-Ras\HECRASMCP\`)에 두고 저장소는 그 아래 `code\`에 둔다고 가정합니다.
+
+자세한 내용은 [`worker/README.md`](worker/README.md)에 있습니다.
+
+### 시험
+
+```bash
+python -m pytest pipeline/tests     # 결과 변환·지표 계산 (30개)
+python mcp/tests/test_mcp.py        # MCP 서버 (가짜 사이트·DB로 확인)
+```
+
+## 자료 출처
+
 - 침수 해석: HEC-RAS 6.6 (U.S. Army Corps of Engineers, Hydrologic Engineering Center)
-- 배경지도·항공사진·3D 지도·건물: 국토교통부 브이월드, GIS건물통합정보
-- 행정구역: 통계청 SGIS 행정동 경계(2022-07, 공공누리 제1유형), vuski/admdongkor 가공(CC BY 4.0)
-- 검증: 한국수자원조사기술원(2022) 「포항 냉천 범람지역 현장조사 결과」(2022.9.13) 흔적수위 · 행정안전부 「침수흔적도」, 재난안전데이터공유플랫폼 오픈API DSSP-IF-00117 (공공누리 제3유형)
+- 배경지도·항공사진·3D 지도·건물 정보: 국토교통부 브이월드, GIS건물통합정보
+- 행정동 경계: 통계청 SGIS(2022-07, 공공누리 제1유형), vuski/admdongkor 가공본(CC BY 4.0)
+- 하천 흔적수위: 한국수자원조사기술원(2022) 「포항 냉천 범람지역 현장조사 결과」(2022.9.13)
+- 침수흔적도(확인용): 행정안전부, 재난안전데이터공유플랫폼 오픈API DSSP-IF-00117
 
-## 개발 방식
+지도에 보이는 결과는 연구용 모의 결과이며 실제 피해 범위와 다를 수 있습니다.
 
-Claude Code로 바이브 코딩. 기능마다 DEFINE → PROMPT → BUILD → TEST → REFINE, 반복 절차는 `.claude/skills/`에 저장.
-코드·실행·정리는 AI가, 수리학적 판단(입력 범위, 판정 기준, 모형 보완 방향)은 작성자가 정했다. 에이전트 컨텍스트는 [`CLAUDE.md`](CLAUDE.md).
+## 만든 방법
+
+코드는 AI 코딩 도구 Claude Code와 대화하며 작성했습니다(바이브 코딩). 코드 작성·실행·정리는 AI가 맡고,
+입력 범위, 판정 기준, 모형 보완 방향 같은 수리학적 판단은 AI에 맡기지 않고 직접 정했습니다.
+기능마다 정의 → 요청 → 구현 → 시험 → 수정 순서로 진행했고, AI에게 준 작업 지침은 `CLAUDE.md`,
+반복해서 쓴 절차(결과 변환, HEC-RAS 실행, 배포, 작업 기록)는 `.claude/skills/`에 남겨 두었습니다.

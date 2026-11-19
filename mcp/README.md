@@ -1,4 +1,4 @@
-# mcp — HEC-RAS 침수 결과 MCP 서버 (선택 과제)
+# mcp — HEC-RAS 침수 결과 MCP 서버 (선택)
 
 AI(Claude Desktop 등)가 자연어로 냉천 힌남노 HEC-RAS 결과를 조회·비교하고, 새 조건의 계산을 웹과 같은 대기열에 요청하게 하는 서버.
 외부 패키지 없이 Python 3.9+ 표준 라이브러리만 쓴다 (MCP stdio, 줄 단위 JSON-RPC 2.0).
@@ -33,7 +33,7 @@ AI(Claude Desktop 등)가 자연어로 냉천 힌남노 HEC-RAS 결과를 조회
       "command": "C:\\Users\\<사용자>\\anaconda3\\python.exe",
       "args": ["C:\\Hec-Ras\\HECRASMCP\\code\\mcp\\hinnamno_mcp.py"],
       "env": {
-        "HINNAMNO_SITE": "https://<배포 주소>",
+        "HINNAMNO_SITE": "https://hinnamno-flood.vercel.app",
         "HINNAMNO_SUPABASE_URL": "https://<프로젝트>.supabase.co",
         "HINNAMNO_SUPABASE_ANON_KEY": "<web/.env.local 의 NEXT_PUBLIC_SUPABASE_ANON_KEY>"
       }
