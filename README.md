@@ -15,6 +15,7 @@
 | (2) 모델 실행 | Supabase 대기열 → Windows 워커가 기준 모형을 복사·u01 수정 → `Ras.exe -c` → 결과 HDF 완료 확인 | `worker/run_worker.py`, `worker/hecras_job.py` |
 | (3) 결과 시각화 | KPI 표, 최대 침수심 지도(2 m 지형·경사 수면), 10분 재생, 지점 수심 시계열, 하천 유량·수위, 3D 물 높이·건물 잠김 | `web/components/FloodMapApp.tsx`, `web/app/3d`, `web/public/view3d` |
 | (4) 시나리오 비교 | 아무 두 결과(웹 계산 포함) 스와이프 비교·KPI 증감표, 기간·단면 선택에 따른 그래프·기간 요약, 원인 지도 | `web/components/AnalysisApp.tsx`, `pipeline/compare_web.py` |
+| 검증 | 하천 흔적수위 vs 결과별 최고수위(웹 계산 포함, 화면에서 계산), 변환 정확성·재현성·체적오차 표 | `web/components/ValidationApp.tsx`, `pipeline/trace_levels.py` |
 | (5) 배포 | GitHub → Vercel 자동 배포, `supabase/migrations` → DB 자동 반영 | `web/`, `supabase/` |
 | (선택) MCP | AI가 자연어로 결과 조회·조건 실행 요청 (표준 라이브러리만 쓰는 stdio 서버) | `mcp/` |
 
@@ -55,7 +56,7 @@
 |---|---|
 | 변환 정확성 | 웹 지도 면적 vs 2 m 래스터 +0.17~0.21 %, 0.1 m 이상 셀 수 브라우저 = 파이썬 |
 | 실행 재현성 | 기준 복사본 재실행 침수면적 ±0.3 %, 셀 최대수위 차이 99분위 ≤ 0.017 m (`worker/compare_results.py`) |
-| 모델 정확성 | 체적오차 전체 1.02 % (S0-C), 좌안 2D 10.1 % — 측방 구조물 RS 7.65 불안정. 실제 침수와의 비교(침수흔적도)는 재난안전데이터공유플랫폼에 2022년 포항 자료가 없어 하지 않음 |
+| 모델 정확성 | 하천 흔적수위(한국수자원조사기술원 2022.9.13 현장조사, 22개) RMSE / 편의: 하천 범람 + 도시 침수 1.01 / −0.82 m, 하천 범람만 1.04 / −0.86 m (`pipeline/trace_levels.py`, 웹 `/validation`). 체적오차 전체 1.02 % (S0-C), 좌안 2D 10.1 % — 측방 구조물 RS 7.65 불안정. 실제 침수 범위 비교(침수흔적도)는 재난안전데이터공유플랫폼에 2022년 포항 자료가 없어 하지 않음 |
 
 ## 실행
 
@@ -70,7 +71,7 @@
 - 침수 해석: HEC-RAS 6.6 (U.S. Army Corps of Engineers, Hydrologic Engineering Center)
 - 배경지도·항공사진·3D 지도·건물: 국토교통부 브이월드, GIS건물통합정보
 - 행정구역: 통계청 SGIS 행정동 경계(2022-07, 공공누리 제1유형), vuski/admdongkor 가공(CC BY 4.0)
-- 검증 자료 확인: 행정안전부 「침수흔적도」, 재난안전데이터공유플랫폼 오픈API DSSP-IF-00117 (공공누리 제3유형)
+- 검증: 한국수자원조사기술원(2022) 「포항 냉천 범람지역 현장조사 결과」(2022.9.13) 흔적수위 · 행정안전부 「침수흔적도」, 재난안전데이터공유플랫폼 오픈API DSSP-IF-00117 (공공누리 제3유형)
 
 ## 개발 방식
 

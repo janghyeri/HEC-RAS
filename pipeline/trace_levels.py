@@ -88,15 +88,15 @@ def compare(survey: list[dict], river: dict) -> dict:
             if t is None or m is None:
                 continue
             points.append({"station": s["station"], "dist_m": s["dist_m"], "side": side, "trace_m": t,
-                           "model_m": round(m, 3), "diff_m": round(m - t, 3)})
-    d = [p["diff_m"] for p in points]
+                           "model_m": round(m, 3), "diff_m": round(m - t, 3), "_d": m - t})
+    d = [p.pop("_d") for p in points]     # 지표는 반올림 전 값으로 (화면 ValidationApp과 같게)
     n = len(d)
     metrics = {
         "n": n,
-        "rmse_m": round(math.sqrt(sum(v * v for v in d) / n), 3) if n else None,
-        "bias_m": round(sum(d) / n, 3) if n else None,
-        "mae_m": round(sum(abs(v) for v in d) / n, 3) if n else None,
-        "max_abs_m": round(max(abs(v) for v in d), 3) if n else None,
+        "rmse_m": round(math.sqrt(sum(v * v for v in d) / n), 6) if n else None,
+        "bias_m": round(sum(d) / n, 6) if n else None,
+        "mae_m": round(sum(abs(v) for v in d) / n, 6) if n else None,
+        "max_abs_m": round(max(abs(v) for v in d), 6) if n else None,
         "n_model_lower": sum(1 for v in d if v < 0),
     }
     return {"metrics": metrics, "points": points}

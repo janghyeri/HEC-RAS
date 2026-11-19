@@ -267,37 +267,37 @@
  "published_results": {
   "S0-C": {
    "n": 22,
-   "rmse_m": 1.005,
-   "bias_m": -0.82,
-   "mae_m": 0.854,
-   "max_abs_m": 2.204,
+   "rmse_m": 1.005013,
+   "bias_m": -0.819662,
+   "mae_m": 0.853938,
+   "max_abs_m": 2.203846,
    "n_model_lower": 20
   },
   "S0-E": {
    "n": 22,
-   "rmse_m": 1.035,
-   "bias_m": -0.856,
-   "mae_m": 0.88,
-   "max_abs_m": 2.214,
+   "rmse_m": 1.035186,
+   "bias_m": -0.855608,
+   "mae_m": 0.879883,
+   "max_abs_m": 2.213846,
    "n_model_lower": 20
   },
   "S2-mh050": {
    "n": 22,
-   "rmse_m": 1.016,
-   "bias_m": -0.837,
-   "mae_m": 0.862,
-   "max_abs_m": 2.204,
+   "rmse_m": 1.015997,
+   "bias_m": -0.83718,
+   "mae_m": 0.861836,
+   "max_abs_m": 2.203846,
    "n_model_lower": 20
   },
   "S2-mh150": {
    "n": 22,
-   "rmse_m": 0.984,
-   "bias_m": -0.79,
-   "mae_m": 0.835,
-   "max_abs_m": 2.184,
+   "rmse_m": 0.983858,
+   "bias_m": -0.789896,
+   "mae_m": 0.834958,
+   "max_abs_m": 2.183846,
    "n_model_lower": 20
   }
  },
- "computed_at": "2026-11-19T05:15:15+00:00",
+ "computed_at": "2026-11-19T05:19:24+00:00",
  "computed_by": "pipeline/trace_levels.py"
 }
