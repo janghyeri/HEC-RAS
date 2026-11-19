@@ -80,15 +80,16 @@ HEC-RAS를 처음 다루던 시기에 구축한 모형이라 틀린 부분이 �
 
 ## 저장소 구성
 
-| 폴더 | 내용 |
+| 폴더 | 역할 |
 |---|---|
-| [`web/`](web/) | 웹앱 (Next.js). 미리 계산한 결과 자료가 `web/public/data/`에 들어 있습니다 |
-| [`worker/`](worker/) | 계산 PC에서 도는 워커 — 요청을 가져와 HEC-RAS를 돌리고 결과를 올립니다 |
-| [`pipeline/`](pipeline/) | HEC-RAS 결과 파일(HDF)을 웹에서 쓰는 형식(지도 타일, 수심 이미지, KPI)으로 바꿉니다 |
-| [`supabase/`](supabase/) | DB 표와 권한 규칙 |
-| [`mcp/`](mcp/) | (선택) AI가 대화로 결과를 조회·비교하고 계산을 요청하는 MCP 서버 |
-| [`docs/`](docs/) | 설계 기록 — 가이드라인(`GUIDE.md`), 기능 명세(`PRD.md`), 작업 계획(`PLAN.md`) |
-| `CLAUDE.md`, `.claude/skills/` | 개발에 쓴 AI 코딩 도구(Claude Code)가 읽는 작업 지침과 반복 절차 |
+| [`web/`](web/) | 웹앱 (Next.js, Vercel 배포) — 침수 지도, 조건 설정·실행, 분석·비교, 3D, 검증 화면. 미리 계산한 결과 자료는 `web/public/data/` |
+| [`supabase/`](supabase/) | 백엔드 — 계산 요청 대기열, 결과 저장소, 권한 규칙 |
+| [`worker/`](worker/) | 계산 PC 워커 — 웹 요청을 받아 HEC-RAS를 실행하고 결과를 올림 |
+| [`pipeline/`](pipeline/) | HEC-RAS 결과(HDF) → 웹 자료 변환 — 지도 타일, 수심 이미지, 핵심 지표(KPI) |
+| [`mcp/`](mcp/) | (선택) MCP 서버 — AI가 대화로 결과를 조회·비교하고 계산을 요청 |
+| [`docs/`](docs/) | 설계 기록 — 가이드라인, 기능 명세, 작업 계획 |
+| [`data/`](data/) | 계산 PC 임시 작업 폴더 (안의 파일은 올리지 않음) |
+| [`CLAUDE.md`](CLAUDE.md), [`.claude/skills/`](.claude/skills/) | 개발에 쓴 AI 코딩 도구(Claude Code)의 작업 지침과 반복 절차 |
 
 HEC-RAS 원자료(모형 파일, 결과 HDF, 지형)와 비밀 키는 저장소에 올리지 않았습니다.
 
