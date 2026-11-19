@@ -48,6 +48,7 @@ ${key ? `<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&ap
     <a href="/">침수 지도</a>
     <a href="/3d" aria-current="page">3D 재현</a>
     <a href="/analysis">분석·비교</a>
+    <a href="/validation">검증</a>
     <a href="/run" class="wide-only">조건 설정·실행</a>
   </nav>
 </header>

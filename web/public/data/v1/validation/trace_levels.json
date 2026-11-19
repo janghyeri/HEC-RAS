@@ -1,0 +1,303 @@
+{
+ "model_version": "v1",
+ "source": {
+  "name": "포항 냉천 범람지역 현장조사 결과 — 참고3 냉천 범람구간 홍수흔적 조사 결과",
+  "provider": "한국수자원조사기술원",
+  "date": "2022-09-13",
+  "citation": "한국수자원조사기술원. (2022). 포항 냉천 범람지역 현장조사 결과 (2022.9.13).",
+  "note": "원문 표의 측점·누가거리·계획홍수위·흔적수위(좌·우안)·제방고를 옮겨 적음. 자료에 '향후 피해신고, 흔적수위 등을 고려하여 변경 예정'이라고 적혀 있음"
+ },
+ "rs_basis": "모형 단면 번호(km) = 하구에서 누가거리 ÷ 1000 — 항만교·냉천교·인덕교·원용교·원리1낙차공 위치가 모형의 교량·구조물 단면 쌍과 20 m 안에서 맞음",
+ "method": "모형 = river.json 단면별 최고수위를 누가거리로 선형 보간, 차이 = 모형 − 흔적 (음수면 모형이 낮음)",
+ "caveat": "흔적수위는 둑에 남은 가장 높은 자국(물결·부유물 자국이 섞일 수 있음), 모형은 1D 단면마다 수위 하나",
+ "survey": [
+  {
+   "station": "0+500",
+   "dist_m": 483.0,
+   "plan_fwl_m": 2.25,
+   "trace_left_m": null,
+   "trace_right_m": 4.42,
+   "levee_old_left_m": 3.64,
+   "levee_old_right_m": 4.86,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 5.57,
+   "note": "항만교 상류 130m"
+  },
+  {
+   "station": "1+600",
+   "dist_m": 1567.0,
+   "plan_fwl_m": 5.07,
+   "trace_left_m": null,
+   "trace_right_m": 6.8,
+   "levee_old_left_m": 6.21,
+   "levee_old_right_m": 5.52,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "No.2",
+   "dist_m": 1991.0,
+   "plan_fwl_m": 6.32,
+   "trace_left_m": null,
+   "trace_right_m": 7.76,
+   "levee_old_left_m": 8.04,
+   "levee_old_right_m": 7.29,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 8.5,
+   "note": "냉천교 상류 80m"
+  },
+  {
+   "station": "2+500",
+   "dist_m": 2478.0,
+   "plan_fwl_m": 7.1,
+   "trace_left_m": null,
+   "trace_right_m": 8.83,
+   "levee_old_left_m": 8.85,
+   "levee_old_right_m": 9.25,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 9.31,
+   "note": null
+  },
+  {
+   "station": "2+600",
+   "dist_m": 2565.0,
+   "plan_fwl_m": 7.21,
+   "trace_left_m": 9.34,
+   "trace_right_m": null,
+   "levee_old_left_m": 8.67,
+   "levee_old_right_m": 9.47,
+   "levee_survey_left_m": 9.17,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "2+800",
+   "dist_m": 2763.0,
+   "plan_fwl_m": 7.54,
+   "trace_left_m": 10.51,
+   "trace_right_m": null,
+   "levee_old_left_m": 10.08,
+   "levee_old_right_m": 9.92,
+   "levee_survey_left_m": 10.12,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "3+100",
+   "dist_m": 3066.0,
+   "plan_fwl_m": 8.83,
+   "trace_left_m": null,
+   "trace_right_m": 11.23,
+   "levee_old_left_m": 9.64,
+   "levee_old_right_m": 10.79,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 10.7,
+   "note": "인덕교 상류 140m"
+  },
+  {
+   "station": "3+300",
+   "dist_m": 3269.0,
+   "plan_fwl_m": 9.23,
+   "trace_left_m": 11.34,
+   "trace_right_m": null,
+   "levee_old_left_m": 10.23,
+   "levee_old_right_m": 11.03,
+   "levee_survey_left_m": 10.37,
+   "levee_survey_right_m": 11.27,
+   "note": null
+  },
+  {
+   "station": "3+500",
+   "dist_m": 3471.0,
+   "plan_fwl_m": 9.89,
+   "trace_left_m": null,
+   "trace_right_m": 12.34,
+   "levee_old_left_m": 11.11,
+   "levee_old_right_m": 12.0,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 12.16,
+   "note": "원리1낙차공 직상류"
+  },
+  {
+   "station": "3+700",
+   "dist_m": 3684.0,
+   "plan_fwl_m": 11.02,
+   "trace_left_m": null,
+   "trace_right_m": 13.58,
+   "levee_old_left_m": 12.43,
+   "levee_old_right_m": 13.51,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 13.19,
+   "note": null
+  },
+  {
+   "station": "3+743",
+   "dist_m": 3733.0,
+   "plan_fwl_m": 12.91,
+   "trace_left_m": 13.75,
+   "trace_right_m": null,
+   "levee_old_left_m": 11.59,
+   "levee_old_right_m": 11.52,
+   "levee_survey_left_m": 13.15,
+   "levee_survey_right_m": null,
+   "note": "원리1낙차공"
+  },
+  {
+   "station": "3+800",
+   "dist_m": 3793.0,
+   "plan_fwl_m": 12.2,
+   "trace_left_m": 13.99,
+   "trace_right_m": null,
+   "levee_old_left_m": 13.23,
+   "levee_old_right_m": 13.9,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "4+100",
+   "dist_m": 4097.0,
+   "plan_fwl_m": 13.78,
+   "trace_left_m": null,
+   "trace_right_m": 15.36,
+   "levee_old_left_m": 15.44,
+   "levee_old_right_m": 15.01,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 15.27,
+   "note": "원용교 상류 80m"
+  },
+  {
+   "station": "4+200",
+   "dist_m": 4194.0,
+   "plan_fwl_m": 14.01,
+   "trace_left_m": 16.79,
+   "trace_right_m": 16.17,
+   "levee_old_left_m": 16.0,
+   "levee_old_right_m": 15.99,
+   "levee_survey_left_m": 16.38,
+   "levee_survey_right_m": 15.93,
+   "note": null
+  },
+  {
+   "station": "4+300",
+   "dist_m": 4294.0,
+   "plan_fwl_m": 14.22,
+   "trace_left_m": null,
+   "trace_right_m": 17.46,
+   "levee_old_left_m": 16.56,
+   "levee_old_right_m": 16.97,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 17.46,
+   "note": null
+  },
+  {
+   "station": "4+600",
+   "dist_m": 4615.0,
+   "plan_fwl_m": 17.72,
+   "trace_left_m": 18.75,
+   "trace_right_m": null,
+   "levee_old_left_m": 18.34,
+   "levee_old_right_m": 19.39,
+   "levee_survey_left_m": 18.57,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "4+700",
+   "dist_m": 4715.0,
+   "plan_fwl_m": 17.95,
+   "trace_left_m": null,
+   "trace_right_m": 19.59,
+   "levee_old_left_m": 18.83,
+   "levee_old_right_m": 19.61,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": 19.59,
+   "note": null
+  },
+  {
+   "station": "4+800",
+   "dist_m": 4804.0,
+   "plan_fwl_m": 18.39,
+   "trace_left_m": null,
+   "trace_right_m": 20.75,
+   "levee_old_left_m": 18.96,
+   "levee_old_right_m": 20.28,
+   "levee_survey_left_m": null,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "No.5",
+   "dist_m": 4977.0,
+   "plan_fwl_m": 19.04,
+   "trace_left_m": 20.86,
+   "trace_right_m": null,
+   "levee_old_left_m": 20.12,
+   "levee_old_right_m": 21.96,
+   "levee_survey_left_m": 20.19,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "5+82",
+   "dist_m": 5058.0,
+   "plan_fwl_m": 19.04,
+   "trace_left_m": 21.72,
+   "trace_right_m": null,
+   "levee_old_left_m": 20.85,
+   "levee_old_right_m": 22.95,
+   "levee_survey_left_m": 20.89,
+   "levee_survey_right_m": null,
+   "note": null
+  },
+  {
+   "station": "5+300",
+   "dist_m": 5300.0,
+   "plan_fwl_m": 20.65,
+   "trace_left_m": 22.59,
+   "trace_right_m": null,
+   "levee_old_left_m": 22.8,
+   "levee_old_right_m": 23.82,
+   "levee_survey_left_m": 22.39,
+   "levee_survey_right_m": null,
+   "note": "문덕교 하류 500m"
+  }
+ ],
+ "published_results": {
+  "S0-C": {
+   "n": 22,
+   "rmse_m": 1.005,
+   "bias_m": -0.82,
+   "mae_m": 0.854,
+   "max_abs_m": 2.204,
+   "n_model_lower": 20
+  },
+  "S0-E": {
+   "n": 22,
+   "rmse_m": 1.035,
+   "bias_m": -0.856,
+   "mae_m": 0.88,
+   "max_abs_m": 2.214,
+   "n_model_lower": 20
+  },
+  "S2-mh050": {
+   "n": 22,
+   "rmse_m": 1.016,
+   "bias_m": -0.837,
+   "mae_m": 0.862,
+   "max_abs_m": 2.204,
+   "n_model_lower": 20
+  },
+  "S2-mh150": {
+   "n": 22,
+   "rmse_m": 0.984,
+   "bias_m": -0.79,
+   "mae_m": 0.835,
+   "max_abs_m": 2.184,
+   "n_model_lower": 20
+  }
+ },
+ "computed_at": "2026-11-19T05:15:15+00:00",
+ "computed_by": "pipeline/trace_levels.py"
+}

@@ -4,12 +4,13 @@
 import { useEffect, useRef, useState } from "react";
 import { SAFETY_GUIDE_URL } from "./AboutDialog";
 
-export type Page = "map" | "3d" | "analysis" | "run";
+export type Page = "map" | "3d" | "analysis" | "validation" | "run";
 
 const LINKS: { page: Page; href: string; label: string }[] = [
   { page: "map", href: "/", label: "침수 지도" },
   { page: "3d", href: "/3d", label: "3D 재현" },
   { page: "analysis", href: "/analysis", label: "분석·비교" },
+  { page: "validation", href: "/validation", label: "검증" },
   { page: "run", href: "/run", label: "조건 설정·실행" },
 ];
 
