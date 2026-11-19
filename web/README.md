@@ -1,5 +1,8 @@
 # web — 힌남노 침수 다시보기 웹앱
 
+> **역할** 사용자가 보는 화면 전부. 조건을 받아 계산을 요청하고, 결과를 지도·그래프·3D로 보여 줍니다.
+> 전체 흐름: 웹(**web**)에서 계산 요청 → 대기열(`supabase`) → 계산 PC(`worker`가 HEC-RAS 실행, `pipeline`이 결과 변환) → 결과 저장소 → 웹에 표시
+
 Next.js(App Router, TypeScript)로 만든 웹앱입니다. 배포 주소는 https://hinnamno-flood.vercel.app 이고,
 GitHub의 `main`에 올리면 Vercel이 이 폴더(`web`)를 빌드해 자동으로 배포합니다.
 
