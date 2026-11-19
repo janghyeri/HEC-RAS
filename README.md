@@ -31,7 +31,7 @@
 |---|---|---|
 | `web/` | Next.js 웹앱 — 조건 설정·실행, 침수 지도, 분석·비교, 3D 재현 | Vercel (Root Directory = `web`) |
 | `worker/` | HEC-RAS 실행 워커 — 작업 조회·입력 수정·계산·결과 업로드 (`start_worker.bat`) | HEC-RAS 6.6 설치 Windows PC |
-| `pipeline/` | 결과 HDF → 웹 형식 (KPI, 지도 타일, 10분 수심 이미지, 경사 수면, 하천 시계열) | 워커와 공유 |
+| `pipeline/` | 결과 HDF → 웹 형식 (KPI, 지도 타일, 10분 수심 이미지, 경사 수면, 하천 시계열, 침수 건물 수) | 워커와 공유 |
 | `mcp/` | (선택) MCP 서버 — 결과 조회·비교·실행 요청 | 로컬 (Claude Desktop 등) |
 | `supabase/` | DB 테이블·권한 정의 | Supabase |
 | `docs/` | 설계 문서 `GUIDE.md`, 기능 명세 `PRD.md`, 계획 `PLAN.md` | — |

@@ -31,7 +31,8 @@ from worker.supabase_rest import Supabase, SupabaseError, _ctype, load_env  # no
 
 BUCKET = "results"
 UPLOAD_FILES = ("kpi.json", "meta.json", "cells_max.u8", "frames_depth.u8", "manholes.geojson", "timeseries.json",
-                "river.json", "river_flow.json", "flow2d.json", "flow2d.bin")
+                "river.json", "river_flow.json", "flow2d.json", "flow2d.bin", "buildings.json")
+BUILDINGS_DESC = "침수 건물 수 (건물통합정보 × 최대 수심, 외곽선 안 ≥ 0.1·0.5·1.0 m) — pipeline/buildings_kpi.py"
 LOG_KEEP = 8000           # DB에 남기는 로그 글자 수 (끝부분)
 
 
@@ -135,6 +136,15 @@ class Worker:
                 log(f"범람 구역 흐름 자료 {f2.get('MB')} MB" if f2.get("ok") else f"범람 구역 흐름 실패 (이미지는 올림): {f2.get('error')}")
             except Exception as e:
                 log(f"침수심 이미지 실패 (최대 수심 지도는 올림): {type(e).__name__}: {e}")
+            if (out / "depth2m" / "frames.json").exists():    # 침수 건물 수 (depth2m/max.png × 건물 외곽선, 2026-11-19)
+                try:
+                    from pipeline.buildings_kpi import make_buildings
+
+                    b = make_buildings(out, ver, sid)
+                    _add_file_desc(out / "meta.json", "buildings.json", BUILDINGS_DESC)
+                    log(f"침수 건물 {b['flooded']['ge_0.1m']}동 (0.1 m 이상, 2D 범위 안 {b['buildings_in_domain']}동 중)")
+                except Exception as e:
+                    log(f"침수 건물 수 실패 (나머지는 올림): {type(e).__name__}: {e}")
             log("결과 파일 올리기", progress="결과 올리는 중")
             n = 0
             for f in UPLOAD_FILES:
@@ -207,6 +217,13 @@ class Worker:
                     pass
         finally:
             self._stop.set()
+
+
+def _add_file_desc(meta_path: Path, name: str, desc: str):
+    """meta.json 파일 목록에 설명 한 줄 더함 (게시 결과 meta.json과 같은 모양)"""
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta.setdefault("files", {})[name] = desc
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def _tasks(msg: str | None) -> dict:

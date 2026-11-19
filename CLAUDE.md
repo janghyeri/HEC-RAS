@@ -22,6 +22,7 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 - 행정구역: web/public/data/admin/boundaries.geojson (pipeline/admin_web.py, 통계청 SGIS 행정동 2022-07 / vuski/admdongkor 가공, 출처 표시 필수)
 - worker/: Python, ras-commander로 HEC-RAS 실행, HDF 읽기 (Windows PC). 워커 PC에서는 start_worker.bat(worker/start_worker.bat 사본) 더블클릭
 - pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임/KPI JSON) 변환. 하천(1D) 수면 지도는 pipeline/river_map.py·river_publish.py (단면 수위 보간, 침수면적 KPI에는 미포함)
+- 침수 건물 수: pipeline/buildings_kpi.py (건물 외곽선 × depth2m/max.png, 2D 범위 안 건물만) — 건물 자료 pipeline/data/buildings_v1.json.gz(브이월드 LT_C_BLDGINFO, 3D buildings.js와 같은 타일·규칙으로 2026-11-19 받음), 범위 이미지 사본 pipeline/data/area2d_2m_v1.png. 워커가 웹 계산마다 buildings.json을 만들어 올림. `--check`로 게시 결과 4개 대조 (2026-11-19)
 - mcp/: (선택) MCP 서버 mcp/hinnamno_mcp.py — 표준 라이브러리 stdio(JSON-RPC), 웹과 같은 공개 키+익명 로그인, 도구 8개(조회·비교·기간 요약·계산 요청은 confirm 2단계·상태). 시험 mcp/tests/test_mcp.py(가짜 사이트·Supabase). PC 사본 C:\Hec-Ras\HECRASMCP\code\mcp, 확인 mcp_check.bat (2026-11-18)
 - supabase/: 테이블 정의 (docs/GUIDE.md §5.2)
 

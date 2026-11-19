@@ -655,8 +655,8 @@ export default function AnalysisApp() {
               <p className="muted small">조건 이름을 누르면 침수 지도에서 그 결과를 엽니다. 웹 계산은 조건 설정·실행 화면에서 요청해 끝난 것입니다.</p>
               <p className="muted small">
                 침수 건물 수: 국토교통부 GIS건물통합정보(브이월드) 건물 외곽선 안 최대 수심(2 m 지형 기준, 경사 수면)이 기준 이상인 건물, 2D 계산 범위 안{" "}
-                {list.find((s) => s.bld)?.bld?.buildings_in_domain.toLocaleString("ko-KR") ?? "—"}동 기준. 2022-09-06 이후 지은 건물은 뺐습니다. 웹 계산 결과는 아직
-                계산하지 않았습니다(—).
+                {list.find((s) => s.bld)?.bld?.buildings_in_domain.toLocaleString("ko-KR") ?? "—"}동 기준. 2022-09-06 이후 지은 건물은 뺐습니다. 웹 계산도 계산 서버가 결과를 올릴 때 같은 방식으로
+                셉니다(—는 건물 수를 세기 전에 끝난 계산).
               </p>
             </section>
           )}

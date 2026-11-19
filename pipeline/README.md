@@ -33,6 +33,7 @@ python -m pipeline.export_web ^
 | `tm_korea.py` | EPSG:5187 ↔ WGS84 (Krüger 급수) |
 | `export_web.py` | 위를 묶어 웹 파일 출력 (출력 목록은 파일 머리 설명) |
 | `models/v1.json` | 모형 버전 설명·주의 사항 → kpi.json `model_notes`로 들어감 |
+| `buildings_kpi.py` | 침수 건물 수(buildings.json): 건물 외곽선 × `depth2m/max.png`. 건물 자료 `data/buildings_v1.json.gz`(국토교통부 GIS건물통합정보, 브이월드 LT_C_BLDGINFO), 범위 이미지 `data/area2d_2m_v1.png`(= web/public/data/v1/area2d_2m.png 사본 — 계산 PC 코드 폴더에는 web/이 없음). `python -m pipeline.buildings_kpi --result-dir <결과 폴더>` / `--check` |
 
 ## 출력 요약 (data/out/<모형 버전>/)
 

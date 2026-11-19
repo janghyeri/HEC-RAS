@@ -4,6 +4,7 @@
 Storage의 meta.json 파일 목록에도 이름을 더한다. 없는 파일은 건너뛴다.
 
 사용 (code 폴더): python -m worker.upload_extra --dir <...\\v1\\run-1> --prefix v1/run-1 flow2d.json flow2d.bin river_flow.json
+                 python -m worker.upload_extra --dir <...\\run-1> --prefix v1/run-1 buildings.json   (침수 건물 수, 2026-11-19)
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ DESC = {
     "flow2d.json": "범람 구역 흐름 방향 설명 — 3D '흐름 보기'",
     "flow2d.bin": "범람 구역 셀 유속(동·북) Int8 — 형식은 flow2d.json",
     "river_flow.json": "냉천 흐름 표시용 단면 평균 유속·수면 폭 (화면 표현용)",
+    "buildings.json": "침수 건물 수 (건물통합정보 × 최대 수심, 외곽선 안 ≥ 0.1·0.5·1.0 m) — pipeline/buildings_kpi.py",
 }
 
 
