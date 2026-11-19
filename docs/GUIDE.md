@@ -60,7 +60,7 @@
 |---|---|---|---|
 | ① 모델 선정 | 오픈소스 또는 전문 프로그램, 자유 주제 | **HEC-RAS 6.6 1D–2D** — 냉천 힌남노 외수·내수 복합 침수 | §4.1 |
 | ② 바이브 코딩 웹앱 | 생성형 AI로 구현, 입력·모의조건 설정/변경, 실행, 사용자 친화 UI | Claude Code로 Next.js 웹앱, 조건 설정 패널 + 실행 버튼 + 작업 상태 | §4.2 |
-| ③ 모델 연계 | 전문 프로그램을 API·CLI·스크립트로 실행 / (선택) MCP | Python 워커가 `ras-commander`로 HEC-RAS 실행, HDF에서 결과 추출 / FastMCP 서버(선택) | §4.3 |
+| ③ 모델 연계 | 전문 프로그램을 API·CLI·스크립트로 실행 / (선택) MCP | Python 워커가 HEC-RAS 명령줄(`Ras.exe -c`)로 실행, h5py로 HDF에서 결과 추출 / 표준 라이브러리 stdio MCP 서버(선택) — 계획 때 검토한 ras-commander·FastMCP는 쓰지 않음 | §4.3 |
 | ④ 대시보드 | KPI, 시계열·공간분포 지도·지점별 결과, 시나리오 비교, 상호작용 | 침수면적·수심등급·침수시작시각·하천 첨두유량·월류량 KPI, 2D/3D 지도, 시간 슬라이더, 스와이프·차이지도 | §4.4 |
 | ⑤ 검증·배포 | 기준 결과와 비교 검증, 클라우드 배포, 웹에서 실행~분석 | 흔적수위·침수흔적도 검증, Vercel + Supabase + 계산 워커 | §4.5 |
 
@@ -109,7 +109,7 @@ flowchart LR
     SB[("Supabase<br/>DB · Storage · Auth")]
   end
   subgraph LAB["HEC-RAS 설치 Windows PC"]
-    WK["Python 워커<br/>ras-commander · HDF 추출"]
+    WK["Python 워커<br/>Ras.exe 명령줄 · HDF 추출"]
     RAS["HEC-RAS 6.6"]
   end
   AI["Claude 등 AI"] -. 선택 .-> MCP["MCP 서버<br/>FastMCP"]
@@ -269,7 +269,7 @@ flowchart LR
 | 3D | **브이월드 WebGL 3D 지도 API 3.0** (Cesium 기반, 항공사진·지형·3D 건물 제공) — 예비: MapLibre 3D + deck.gl | 실사 지형·건물 위 침수 재현 (§4.4.5) |
 | 차트 | Recharts 또는 ECharts | 수문곡선·수위 시계열 |
 | 백엔드/DB | **Supabase** (Postgres · Storage · Auth) | 시나리오·작업·KPI 저장, 결과 파일 |
-| 계산 워커 | Python + `ras-commander` + `rashdf`/`h5py` + `numpy` + `geopandas`/`rasterio` | HEC-RAS 실행·결과 변환 |
+| 계산 워커 | Python + HEC-RAS 명령줄(`Ras.exe -c`) + `h5py` + `numpy` + `Pillow` (계획 때 검토한 `ras-commander`·`rashdf`·`geopandas`/`rasterio`는 쓰지 않음) | HEC-RAS 실행·결과 변환 |
 | 배포 | **Vercel** (웹), HEC-RAS 설치 PC (워커) | 외부 접속 URL |
 | 디자인 | Pencil 또는 Figma (선택) | 화면 시안 |
 
@@ -326,6 +326,8 @@ flowchart LR
 - 작업마다 **기준 프로젝트 폴더를 통째로 복사한 작업 폴더**에서 실행한다(원본 보호, 동시 실행 충돌 방지). 상대경로 참조(`..\node.dss`, `..\NC090901\Terrain`) 때문에 `Pohang` 폴더 구조를 그대로 복사한다.
 
 #### 4.3.2 워커 코드 뼈대 (스케치)
+
+> **구현 결과 (2026-11-19 정리)**: ras-commander는 쓰지 않았다. 워커는 `Ras.exe -c "<prj>" "<plan>"`을 직접 부르고(`worker/hecras_job.py` `ras_command`), u01 표는 직접 읽어 고치며, 결과 HDF는 h5py로 읽는다(`pipeline/hecras_hdf.py`). 아래 뼈대와 모듈 표는 계획 단계 스케치로 남겨 둔다.
 
 > 함수 이름·인자는 설치한 `ras-commander` 버전 문서로 확인한다. HEC-RAS 6.6 지원 여부도 먼저 확인한다.
 
@@ -675,7 +677,7 @@ HEC-RAS 6.6 1D–2D로 해석한 2022 힌남노 포항 냉천 외수·내수 침
 
 ## 구조
 - web/: Next.js(App Router, TS) + shadcn/ui + MapLibre GL(2D) + 브이월드 WebGL 3D(3D), Supabase 연동
-- worker/: Python, ras-commander로 HEC-RAS 실행, HDF 읽기 (Windows PC)
+- worker/: Python, HEC-RAS 명령줄(Ras.exe -c)로 실행, h5py로 HDF 읽기 (Windows PC)
 - pipeline/: HDF → 웹 형식(PMTiles/Uint8 프레임) 변환
 - 상세 설계: docs/GUIDE.md (HDF 경로 표는 §4.3.2)
 
