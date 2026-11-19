@@ -396,7 +396,7 @@ export default function ValidationApp() {
                 </label>
               )}
             </div>
-            {!trace && !error && <p className="muted">불러오는 중…</p>}
+            {(!trace || rivers.size === 0) && !error && <p className="muted">결과별 하천 단면 자료를 불러오는 중…</p>}
             {trace && cur?.m && cur.rv && (
               <>
                 <dl className="metric-row">
