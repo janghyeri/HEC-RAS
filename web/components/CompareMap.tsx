@@ -1,16 +1,17 @@
 "use client";
 
 // 하천 범람(A) vs 하천 범람 + 도시 침수(B) 지도.
-//  - 원인 지도: 지도 하나에 분류 타일 (pipeline/compare_web.py)
+//  - 원인 지도: 지도 하나에 분류 타일 (pipeline/compare_web.py, 기본 두 조건만 미리 만듦)
+//  - 차이 지도: 아무 두 결과를 브라우저에서 나눈 그림 (lib/diffmap.ts) — 지도 하나에 얹는다
 //  - 밀어서 비교: 지도 두 장을 겹치고 위 지도(B)를 가르는 선 오른쪽만 보이게 자른다. 움직임은 서로 맞춘다.
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import type { Map as MLMap, StyleSpecification } from "maplibre-gl";
+import type { ImageSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BASE_LAYERS, baseStyle, type Basemap } from "@/lib/basemap";
 import { absoluteUrl, scenarioUrl, type BBox } from "@/lib/data";
 import type { Summary } from "@/lib/summary";
 
-export type CompareMode = "cause" | "swipe";
+export type CompareMode = "cause" | "diff" | "swipe";
 
 interface Props {
   a: Summary;
@@ -19,6 +20,8 @@ interface Props {
   bLabel: string;
   causeTiles: string | null; // .../tiles/{z}/{x}/{y}.png
   causeBounds: BBox | null;
+  /** 차이 지도 그림 (blob 주소)과 범위. 아직 없으면 null */
+  diff: { url: string; bounds: BBox } | null;
   mode: CompareMode;
   basemap: Basemap;
   bbox: BBox;
@@ -35,7 +38,7 @@ function floodSource(s: Summary) {
   };
 }
 
-export default function CompareMap({ a, b, aLabel, bLabel, causeTiles, causeBounds, mode, basemap, bbox }: Props) {
+export default function CompareMap({ a, b, aLabel, bLabel, causeTiles, causeBounds, diff, mode, basemap, bbox }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const boxA = useRef<HTMLDivElement>(null);
   const boxB = useRef<HTMLDivElement>(null);
@@ -107,16 +110,43 @@ export default function CompareMap({ a, b, aLabel, bLabel, causeTiles, causeBoun
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.ref.scenario_id, b.ref.scenario_id]);
 
-  // 보기 방식: 원인 지도면 A 지도에 분류만, 밀어서 비교면 A·B 수심
+  // 보기 방식: 원인 지도·차이 지도면 A 지도에 분류만, 밀어서 비교면 A·B 수심
   useEffect(() => {
     const { a: ma, b: mb } = maps.current;
-    if (!ma || !mb || ready < 2) return;
+    if (!ma || !mb || ready < 2 || !ma.getLayer("flood")) return; // flood 층이 없으면 아직 불러오는 중 (불러오면 ready가 바뀌어 다시 돎)
+    if (diff) {
+      const [w, s, e, n] = diff.bounds;
+      const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+        [w, n],
+        [e, n],
+        [e, s],
+        [w, s],
+      ];
+      const src = ma.getSource("diff") as ImageSource | undefined;
+      if (src) src.updateImage({ url: diff.url, coordinates });
+      else {
+        const before = ma.getLayer(BASE_LAYERS.label) ? BASE_LAYERS.label : undefined;
+        ma.addSource("diff", { type: "image", url: diff.url, coordinates });
+        ma.addLayer(
+          {
+            id: "diff",
+            type: "raster",
+            source: "diff",
+            layout: { visibility: "none" },
+            paint: { "raster-opacity": 0.95, "raster-fade-duration": 0, "raster-resampling": "nearest" },
+          },
+          before,
+        );
+      }
+    }
     const cause = mode === "cause" && !!ma.getLayer("cause");
-    ma.setLayoutProperty("flood", "visibility", cause ? "none" : "visible");
+    const dif = mode === "diff" && !!diff && !!ma.getLayer("diff");
+    ma.setLayoutProperty("flood", "visibility", cause || dif ? "none" : "visible");
     if (ma.getLayer("cause")) ma.setLayoutProperty("cause", "visibility", cause ? "visible" : "none");
+    if (ma.getLayer("diff")) ma.setLayoutProperty("diff", "visibility", dif ? "visible" : "none");
     ma.resize();
     mb.resize();
-  }, [mode, ready]);
+  }, [mode, ready, diff]);
 
   // 배경지도
   useEffect(() => {
@@ -139,7 +169,7 @@ export default function CompareMap({ a, b, aLabel, bLabel, causeTiles, causeBoun
   const swipe = mode === "swipe";
   return (
     <div className="cmp-map" ref={wrap}>
-      <div ref={boxA} className="cmp-layer" aria-label={swipe ? `${aLabel} 지도 (왼쪽)` : "침수 원인 지도"} />
+      <div ref={boxA} className="cmp-layer" aria-label={swipe ? `${aLabel} 지도 (왼쪽)` : mode === "diff" ? `${aLabel} 대비 ${bLabel} 수심 차이 지도` : "침수 원인 지도"} />
       <div
         ref={boxB}
         className="cmp-layer"

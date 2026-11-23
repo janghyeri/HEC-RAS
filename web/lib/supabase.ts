@@ -181,6 +181,11 @@ export function listRuns(modelVersion: string, limit = 20): Promise<RunRow[]> {
   return call<RunRow[]>(`/rest/v1/runs?select=${RUN_COLS}&model_version=eq.${enc(modelVersion)}&order=created_at.desc&limit=${limit}`);
 }
 
+/** 모든 모형 버전의 최근 계산 (화면 위 계산 진행 표시용) */
+export function latestRuns(limit = 10): Promise<RunRow[]> {
+  return call<RunRow[]>(`/rest/v1/runs?select=${RUN_COLS}&order=created_at.desc&limit=${limit}`);
+}
+
 export async function getRun(id: number, withLog = false): Promise<RunRow | null> {
   const rows = await call<RunRow[]>(`/rest/v1/runs?select=${RUN_COLS}${withLog ? ",log" : ""}&id=eq.${id}`);
   return rows[0] ?? null;

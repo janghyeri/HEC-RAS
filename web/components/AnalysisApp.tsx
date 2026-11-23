@@ -4,10 +4,12 @@
 //  1. 두 결과 비교: 기본은 하천 범람 vs 하천 범람 + 도시 침수(원인 지도·밀어서 비교·증감표).
 //     2026-11-17 사용자 요청으로 웹 계산 결과를 포함한 아무 두 결과도 고를 수 있게 함 (원인 지도는 미리 만든 기본 쌍만).
 //     고른 쌍은 주소에 ?a=…&b=… 로 남는다
+//     2026-11-23: 차이 지도 — 아무 두 결과를 브라우저에서 새로 잠김·더 깊어짐·비슷함·얕아짐·안 잠기게 됨으로 나눔 (lib/diffmap.ts,
+//     기준 0.1 m는 원인 지도와 같음). 원인 지도가 없는 쌍은 차이 지도가 기본
 //  2. 시간별 변화: 침수면적·하천 유량·하천 수위·맨홀 유입·측방 구조물 (조건을 골라 겹쳐 보기)
 //     2026-11-18: 기간(시작–끝 시각)을 고르면 그래프와 '기간 요약'(기간 안 최댓값·시각, 맨홀 유입량)이 함께 바뀐다
 //  3. 해석 조건별 주요 결과 표 (게시된 조건 + 웹에서 계산이 끝난 결과)
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import TopBar from "./TopBar";
 import LineChart, { type Series } from "./LineChart";
@@ -25,6 +27,8 @@ import {
   type Summary,
 } from "@/lib/summary";
 import { DATA_ROOT, type BBox, type MeshInfo, type ModelInfo } from "@/lib/data";
+import { DIFF_CLASSES } from "@/lib/diffmap";
+import { makeDiffMap, type DiffMap } from "@/lib/diffmapLoad";
 
 const CompareMap = dynamic(() => import("./CompareMap"), { ssr: false });
 
@@ -158,6 +162,8 @@ export default function AnalysisApp() {
   const [view, setView] = useState<BBox | null>(null);
   const [sel, setSel] = useState<{ a: string; b: string } | null>(null);
   const [win, setWin] = useState<[number, number] | null>(null); // 기간 (시각 번호), null = 전체
+  const [diffMap, setDiffMap] = useState<{ key: string; map: DiffMap | null; error: string | null } | null>(null);
+  const diffUrls = useRef<string[]>([]);
 
   useEffect(() => {
     loadSummaries()
@@ -204,6 +210,32 @@ export default function AnalysisApp() {
   }, [list, sel, pair]);
   const isBase = !!(cur && pair && cur.a === pair.a && cur.b === pair.b);
   const cmpCur = isBase ? cmp : null;
+  // 원인 지도는 기본 쌍만 있으므로, 다른 쌍에서 '원인 지도'를 고른 상태면 차이 지도를 보여 준다
+  const effMode: CompareMode = cmpCur ? mode : mode === "cause" ? "diff" : mode;
+  const curKey = cur ? `${cur.a.ref.scenario_id}|${cur.b.ref.scenario_id}` : "";
+
+  // 차이 지도: 처음 볼 때 한 번 계산 (두 결과의 2 m 수심 이미지를 내려받아 브라우저에서 나눔)
+  useEffect(() => {
+    if (effMode !== "diff" || !cur || !version || diffMap?.key === curKey) return;
+    const key = curKey;
+    setDiffMap({ key, map: null, error: null });
+    makeDiffMap(version, cur.a.ref, cur.b.ref)
+      .then((map) => {
+        diffUrls.current.push(map.url);
+        setDiffMap((prev) => (prev?.key === key ? { key, map, error: null } : prev));
+        // 지난 그림 주소는 지도가 새 그림을 받은 뒤 정리
+        const old = diffUrls.current.slice(0, -1);
+        diffUrls.current = diffUrls.current.slice(-1);
+        if (old.length) setTimeout(() => old.forEach((u) => URL.revokeObjectURL(u)), 3000);
+      })
+      .catch((e: unknown) =>
+        setDiffMap((prev) => (prev?.key === key ? { key, map: null, error: e instanceof Error ? e.message : String(e) } : prev)),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effMode, curKey, version]);
+  useEffect(() => () => diffUrls.current.forEach((u) => URL.revokeObjectURL(u)), []);
+  const dm = diffMap && diffMap.key === curKey ? diffMap : null;
+  const dres = dm?.map?.result ?? null;
   const pick = (side: "a" | "b", id: string) => {
     if (!cur) return;
     const next = { a: side === "a" ? id : cur.a.ref.scenario_id, b: side === "b" ? id : cur.b.ref.scenario_id };
@@ -317,7 +349,10 @@ export default function AnalysisApp() {
                   <button type="button" role="radio" aria-checked={mode === "cause" && !!cmpCur} onClick={() => setMode("cause")} disabled={!cmpCur}>
                     원인 지도
                   </button>
-                  <button type="button" role="radio" aria-checked={mode === "swipe" || !cmpCur} onClick={() => setMode("swipe")}>
+                  <button type="button" role="radio" aria-checked={effMode === "diff"} onClick={() => setMode("diff")}>
+                    차이 지도
+                  </button>
+                  <button type="button" role="radio" aria-checked={effMode === "swipe"} onClick={() => setMode("swipe")}>
                     밀어서 비교
                   </button>
                 </div>
@@ -342,14 +377,15 @@ export default function AnalysisApp() {
                       bLabel={shortLabel(cur.b.ref.label)}
                       causeTiles={cmpCur ? `${compareBase(version, pair.a.ref.scenario_id, pair.b.ref.scenario_id)}/tiles/{z}/{x}/{y}.png?v=${encodeURIComponent(cmpCur.generated_at)}` : null}
                       causeBounds={pair.b.tiles.bounds}
-                      mode={cmpCur ? mode : "swipe"}
+                      diff={dm?.map ? { url: dm.map.url, bounds: dm.map.bounds } : null}
+                      mode={effMode}
                       basemap={basemap}
                       bbox={bbox}
                     />
                   )}
                 </div>
                 <div className="cmp-side">
-                  {mode === "cause" && cmpCur ? (
+                  {effMode === "cause" && cmpCur ? (
                     <>
                       <ul className="cause-legend">
                         {cmp.categories.map((c) => (
@@ -373,6 +409,40 @@ export default function AnalysisApp() {
                       </p>
                       <p className="muted small">2 m 지형 기준 최대 수심 래스터(2D 영역)로 나눈 값이라 주요 결과 표(셀 기준)와 1~3 % 다를 수 있습니다. 하천 물은 넣지 않았습니다.</p>
                     </>
+                  ) : effMode === "diff" ? (
+                    <>
+                      {dm?.error && <p className="warn small">{dm.error}</p>}
+                      {!dm?.error && !dres && <p className="muted small">차이 지도를 계산하는 중… 두 결과의 2 m 수심 이미지를 내려받아 브라우저에서 나눕니다.</p>}
+                      {dres && (
+                        <>
+                          <ul className="cause-legend">
+                            {DIFF_CLASSES.map((c) => (
+                              <li key={c.id}>
+                                <span className="cause-swatch" style={{ background: `rgb(${c.rgba[0]},${c.rgba[1]},${c.rgba[2]})` }} aria-hidden="true" />
+                                <div>
+                                  <strong>{c.label}</strong>
+                                  <span className="muted small">{c.detail}</span>
+                                </div>
+                                <b>{dres.area_km2[c.key].toFixed(2)} km²</b>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="muted small">
+                            {`${shortLabel(cur.b.ref.label)}에서 잠긴 면적은 ${dres.area_b_km2.toFixed(2)} km²로 ${shortLabel(cur.a.ref.label)}(${dres.area_a_km2.toFixed(2)} km²)보다 ` +
+                              (Math.abs(dres.area_b_km2 - dres.area_a_km2) < 0.005
+                                ? "거의 같습니다. "
+                                : `${Math.abs(dres.area_b_km2 - dres.area_a_km2).toFixed(2)} km² ${dres.area_b_km2 > dres.area_a_km2 ? "넓습니다" : "좁습니다"}. `) +
+                              `둘 다 잠긴 곳 가운데 ${dres.area_km2.deeper.toFixed(2)} km²가 0.1 m 이상 깊어졌고` +
+                              (dres.deeper_median_m !== null ? ` (깊어진 곳의 중앙값 +${dres.deeper_median_m.toFixed(2)} m)` : "") +
+                              `, ${dres.area_km2.shallower.toFixed(2)} km²가 0.1 m 이상 얕아졌습니다.`}
+                          </p>
+                          <p className="muted small">
+                            기준 = 왼쪽, 비교 = 오른쪽에서 고른 결과. 지도·3D와 같은 2 m 수심 이미지(0.02 m 단위)를 2D 범위에서만 나눈 값이라 주요 결과 표(셀 기준)와 1~3 %
+                            다를 수 있습니다.{dm?.map?.masked ? " 하천 물은 넣지 않았습니다." : " 2D 범위 자료가 없어 하천 물도 들어 있습니다."}
+                          </p>
+                        </>
+                      )}
+                    </>
                   ) : (
                     <>
                       <p className="cmp-hint">가운데 선을 좌우로 밀면 같은 자리를 두 계산으로 비교할 수 있습니다.</p>
@@ -382,7 +452,7 @@ export default function AnalysisApp() {
                         <dt>{shortLabel(cur.b.ref.label)} (오른쪽)</dt>
                         <dd>{cur.b.kpi.inundation_area_km2["ge_0.1m"].toFixed(2)} km²</dd>
                       </dl>
-                      {!isBase && <p className="muted small">원인 지도(하천 범람만·도시 침수로 더 깊어짐·도시 침수만)는 기본 두 조건으로만 미리 만들어 두었습니다.</p>}
+                      {!isBase && <p className="muted small">원인 지도는 기본 두 조건으로만 미리 만들어 두었습니다. 다른 두 결과는 ‘차이 지도’로 어디가 새로 잠기고 깊어졌는지 볼 수 있습니다.</p>}
                       <p className="muted small">색은 최대 침수심 등급 (0.1–0.5 / 0.5–1 / 1–2 / 2 m 이상, 진할수록 깊음).</p>
                     </>
                   )}

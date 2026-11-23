@@ -3,6 +3,7 @@
 // 모든 화면 공통 머리글 (디자인 최종안 A안: 남색 띠). PC는 주 메뉴, 휴대폰은 메뉴 버튼을 누르면 펼친다.
 import { useEffect, useRef, useState } from "react";
 import { SAFETY_GUIDE_URL } from "./AboutDialog";
+import RunStatus from "./RunStatus";
 
 export type Page = "map" | "3d" | "analysis" | "validation" | "run";
 
@@ -33,6 +34,7 @@ export default function TopBar({ current, onAbout }: { current: Page; onAbout?: 
   }, [open]);
 
   return (
+    <>
     <header className="topbar">
       <div className="brand">
         <span className="brand-sub">
@@ -92,5 +94,7 @@ export default function TopBar({ current, onAbout }: { current: Page; onAbout?: 
         )}
       </div>
     </header>
+    {current !== "run" && <RunStatus onMap={current === "map"} />}
+    </>
   );
 }
