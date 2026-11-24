@@ -2266,3 +2266,15 @@ a:hover {
     padding: 4px 2px;
   }
 }
+
+/* 표·그래프 CSV 내려받기 (분석·비교) */
+.run-card-head .csv-btn {
+  margin-left: auto;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.run-card-head .csv-btn:disabled {
+  color: var(--muted);
+  text-decoration: none;
+}

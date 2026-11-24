@@ -29,6 +29,7 @@ import {
 import { DATA_ROOT, type BBox, type MeshInfo, type ModelInfo } from "@/lib/data";
 import { DIFF_CLASSES } from "@/lib/diffmap";
 import { makeDiffMap, type DiffMap } from "@/lib/diffmapLoad";
+import { downloadCsv, round, type CsvCell } from "@/lib/csv";
 
 const CompareMap = dynamic(() => import("./CompareMap"), { ssr: false });
 
@@ -116,6 +117,13 @@ function cell(r: Row, v: number | string | null): string {
   if (v === null || v === undefined) return "—";
   if (r.time) return hhmm(v as string);
   return (v as number).toLocaleString("ko-KR", { minimumFractionDigits: r.digits, maximumFractionDigits: r.digits });
+}
+
+/** CSV 값: 숫자는 표와 같은 소수 자리, 시각은 'YYYY-MM-DD HH:MM' (KST, 모형 입력 시각 그대로) */
+function csvVal(r: Row, v: number | string | null): CsvCell {
+  if (v === null || v === undefined) return null;
+  if (r.time) return (v as string).slice(0, 16).replace("T", " ");
+  return round(v as number, r.digits);
 }
 
 function diff(r: Row, a: number | string | null, b: number | string | null): { text: string; rate: string } {
@@ -284,6 +292,37 @@ export default function AnalysisApp() {
         color: colors.get(s.ref.scenario_id) ?? "#888",
         values: v.slice(w0, w1 + 1),
       }));
+
+  // 시간별 변화 CSV: 고른 기간·단면·측방 구조물, 겹쳐 본 결과마다 열
+  const tsCsv = () => {
+    const shown = shownList.filter((s) => s.ts);
+    const cols: { head: string; get: (s: Summary, t: number) => number | null }[] = [
+      { head: "침수면적 0.1 m 이상 (km²)", get: (s, t) => round(s.ts?.["inundation_area_ge_0.1m_km2"]?.[t], 4) },
+      { head: "맨홀 유입 유량 합계 (m³/s)", get: (s, t) => ((s.kpi.internal_inflow?.count ?? 0) > 0 ? round(s.ts?.internal_inflow_total_m3s?.[t], 3) : null) },
+      { head: `하천 유량 RS ${station} (m³/s)`, get: (s, t) => (stIdx >= 0 ? round(s.ts?.river_flow_m3s?.[t]?.[stIdx], 2) : null) },
+      { head: `하천 수위 RS ${station} (EL. m)`, get: (s, t) => (stIdx >= 0 ? round(s.ts?.river_ws_m?.[t]?.[stIdx], 3) : null) },
+      ...(structure
+        ? [{ head: `측방 구조물 RS ${lateralRs(structure)} 유량, + 하천→시가지 (m³/s, 참고값)`, get: (s: Summary, t: number) => round(s.ts?.lateral_flow_m3s?.[structure]?.[t], 2) }]
+        : []),
+    ];
+    const head: CsvCell[] = ["시각 (KST)"];
+    for (const c of cols) for (const s of shown) head.push(`${nameOf(s)} · ${c.head}`);
+    const out: CsvCell[][] = [head];
+    for (let t = w0; t <= w1; t++) {
+      const row: CsvCell[] = [times[t].slice(0, 16).replace("T", " ")];
+      for (const c of cols) for (const s of shown) row.push(c.get(s, t));
+      out.push(row);
+    }
+    downloadCsv(`hinnamno_timeseries_${version}_${hhmm(times[w0]).replace(":", "")}-${hhmm(times[w1]).replace(":", "")}.csv`, out);
+  };
+  // 주요 결과 표 CSV: 결과마다 열 (게시된 조건 + 웹 계산)
+  const allCsv = () => {
+    if (!list) return;
+    const out: CsvCell[][] = [["항목", "단위", ...list.map((s) => nameOf(s) + (s.ref.run_id !== undefined ? " (웹 계산)" : ""))]];
+    for (const r of R) out.push([r.label.replace(/^· /, "  "), r.unit, ...list.map((s) => csvVal(r, r.get(s)))]);
+    out.push([], [`모형 ${version} · 침수면적·지표 정의는 docs/GUIDE.md §4.4.1 · ${location.origin}/analysis`]);
+    downloadCsv(`hinnamno_results_${version}.csv`, out);
+  };
 
   const bbox: BBox | null = cmp?.wet_bbox ?? view ?? pair?.b.tiles.bounds ?? null;
   const optionLabel = (s: Summary) => (s.ref.run_id !== undefined ? `${shortLabel(s.ref.label)} (웹 계산)` : shortLabel(s.ref.label));
@@ -505,6 +544,9 @@ export default function AnalysisApp() {
               <div className="run-card-head">
                 <h2 id="ts-title">시간별 변화</h2>
                 <span className="muted small">10분 간격 · {hhmm(times[0])}–{hhmm(times[times.length - 1])}</span>
+                <button type="button" className="link-btn csv-btn" onClick={tsCsv} disabled={!shownList.some((s) => s.ts)}>
+                  CSV 내려받기
+                </button>
               </div>
               <div className="chips" role="group" aria-label="겹쳐 볼 해석 조건">
                 {list.map((s) => {
@@ -693,6 +735,9 @@ export default function AnalysisApp() {
                   게시된 조건 {list.filter((s) => s.ref.run_id === undefined).length}개
                   {list.some((s) => s.ref.run_id !== undefined) && ` · 웹 계산 ${list.filter((s) => s.ref.run_id !== undefined).length}건`}
                 </span>
+                <button type="button" className="link-btn csv-btn" onClick={allCsv}>
+                  CSV 내려받기
+                </button>
               </div>
               <div className="table-scroll">
                 <table className="kpi-table all">
