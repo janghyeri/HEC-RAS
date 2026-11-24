@@ -379,7 +379,7 @@ def run_job(job):
 
 참고 발표자료의 SWMM-MCP처럼, 워커 기능을 MCP 도구로 감싸 AI가 자연어로 HEC-RAS를 다루게 한다.
 
-> **구현 (2026-11-18)** `mcp/hinnamno_mcp.py` — FastMCP 대신 외부 패키지 없는 표준 라이브러리 stdio 서버(PC 설치 부담 없음). 웹과 같은 공개(anon) 키 + 익명 로그인만 쓰고 service_role은 쓰지 않는다(대기 제한·같은 조건 재사용은 RLS 그대로). 도구: `describe_model`, `list_results`, `get_kpi`, `compare_results`, `get_timeseries_summary`(기간·단면), `request_run`(confirm=false면 조건·해시만, true일 때만 대기열), `get_run_status`, `worker_status`. 조건 해시는 웹 계산 1의 값과 일치 확인. 아래 표의 `get_point_timeseries`·`plot_flood_map`은 아직 없음.
+> **구현 (2026-11-18)** `mcp/hinnamno_mcp.py` — FastMCP 대신 외부 패키지 없는 표준 라이브러리 stdio 서버(PC 설치 부담 없음). 웹과 같은 공개(anon) 키 + 익명 로그인만 쓰고 service_role은 쓰지 않는다(대기 제한·같은 조건 재사용은 RLS 그대로). 도구: `describe_model`, `list_results`, `get_kpi`, `compare_results`, `get_timeseries_summary`(기간·단면), `request_run`(confirm=false면 조건·해시만, true일 때만 대기열), `get_run_status`, `worker_status`. 조건 해시는 웹 계산 1의 값과 일치 확인. 아래 표의 `get_point_timeseries`는 2026-11-23 `get_point_depth`로 구현 — 주소(사이트 `/api/search`, 브이월드 검색) 또는 위도·경도 → 2D 셀(웹 `lib/cells.ts`와 같은 균일 격자 색인 + 다각형 내부 판정) → 최대 수심·최대 시각·0.3 m 이상 지속(`cells_max.u8`), 결과를 고르면 1시간 간격 수심(`frames_depth.u8`)과 수치 진동 표시. 시험 6곳에서 웹 셀 찾기와 셀 번호·수심이 모두 같음, `mcp/tests` 5개 통과. `plot_flood_map`은 아직 없음.
 
 | 도구 | 기능 |
 |---|---|
