@@ -12,7 +12,8 @@ GitHub의 `main`에 올리면 Vercel이 이 폴더(`web`)를 빌드해 자동으
 |---|---|---|
 | `/` | 침수 지도 — 최대 침수심, 10분 재생, 주소 검색, 지점 수심 그래프, 주요 결과 표 | `components/FloodMapApp.tsx` |
 | `/run` | 조건 설정·실행 — 계산 요청, 진행 상태·로그, 계산 서버 상태 | `components/RunApp.tsx`, `lib/supabase.ts` |
-| `/analysis` | 분석·비교 — 두 결과 비교, 증감표, 원인 지도, 기간·단면별 그래프 | `components/AnalysisApp.tsx` |
+| `/analysis` | 분석·비교 — 두 결과 비교, 증감표, 원인 지도, 차이 지도(아무 두 결과, 브라우저 계산), 기간·단면별 그래프 | `components/AnalysisApp.tsx`, `lib/diffmap.ts` |
+| (모든 화면) | 계산 진행 표시 — 대기·계산 중인 계산의 단계·지난 시간, 끝나면 결과 바로가기 (`/run`, `/3d` 제외) | `components/RunStatus.tsx` |
 | `/3d` | 3D 재현 — 물 높이, 건물 잠김, 흐름 보기 | `app/3d/route.ts`, `public/view3d/` |
 | `/validation` | 검증 — 하천 흔적수위 비교, 변환·재현성 표 | `components/ValidationApp.tsx` |
 

@@ -345,7 +345,7 @@ export default function AnalysisApp() {
                 )}
               </div>
               <div className="cmp-tools">
-                <div className="seg" role="radiogroup" aria-label="지도 보기">
+                <div className="seg seg-3" role="radiogroup" aria-label="지도 보기">
                   <button type="button" role="radio" aria-checked={mode === "cause" && !!cmpCur} onClick={() => setMode("cause")} disabled={!cmpCur}>
                     원인 지도
                   </button>
