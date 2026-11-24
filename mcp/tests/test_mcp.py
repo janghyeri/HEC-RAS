@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import unittest
+from array import array
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -22,6 +23,25 @@ RUN1 = {"id": 1, "model_version": "v1", "base": "S0-C",
         "params_hash": "9ceeace833435682", "label": None, "status": "done", "created_at": "2026-11-03T01:04:24+00:00",
         "started_at": "2026-11-03T01:04:34+00:00", "finished_at": "2026-11-03T01:13:16+00:00", "worker_id": "knuwater-24core",
         "progress": "완료", "error": None, "wall_seconds": 522.2, "files_prefix": "v1/run-1"}
+
+
+def _cell_fixture():
+    """S0-C에서 최대 수심 1 m 이상인 첫 셀과 그 꼭짓점 평균 (시험 지점)"""
+    info = json.loads((DATA / "v1" / "mesh.json").read_text(encoding="utf-8"))
+    v, o = array("i"), array("I")
+    v.frombytes((DATA / "v1" / "mesh_vertices.i32").read_bytes())
+    o.frombytes((DATA / "v1" / "mesh_offsets.u32").read_bytes())
+    cm = (DATA / "v1" / "S0-C" / "cells_max.u8").read_bytes()
+    step = json.loads((DATA / "v1" / "S0-C" / "meta.json").read_text(encoding="utf-8"))["quantization"]["depth_step_m"]
+    sc = info["coordinate_scale"]
+    for i in range(info["n_cells"]):
+        if cm[i] * step >= 1.0 and o[i + 1] - o[i] == 4:
+            xs, ys = v[2 * o[i]:2 * o[i + 1]:2], v[2 * o[i] + 1:2 * o[i + 1]:2]
+            return i, (sum(xs) / len(xs) / sc, sum(ys) / len(ys) / sc), round(cm[i] * step, 2)
+    raise RuntimeError("시험 셀 없음")
+
+
+CELL, SEARCH_HIT, CELL_DEPTH = _cell_fixture()
 
 
 class State:
@@ -41,17 +61,32 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def send_file(self, f: Path):
+        if f.suffix == ".json":
+            return self.send_json(json.loads(f.read_text(encoding="utf-8")))
+        b = f.read_bytes()  # 격자·셀 값 같은 이진 파일
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path.startswith("/data/"):  # 가짜 배포 사이트
             f = DATA / u.path[len("/data/"):]
             if f.is_file():
-                return self.send_json(json.loads(f.read_text(encoding="utf-8")))
+                return self.send_file(f)
             return self.send_json({"error": "not found"}, 404)
+        if u.path == "/api/search":  # 가짜 주소 검색 — 시험용 셀 중심을 돌려준다
+            if q.get("q", [""])[0] == "없는 곳":
+                return self.send_json({"items": []})
+            lon, lat = SEARCH_HIT
+            return self.send_json({"items": [{"title": "시험 지점", "address": "포항시 남구", "lon": lon, "lat": lat}]})
         if u.path.startswith("/storage/v1/object/public/results/v1/run-1/"):  # run-1 결과 = 게시된 맨홀 ×1.5 파일로 대신
             f = DATA / "v1" / "S2-mh150" / u.path.rsplit("/", 1)[1]
-            return self.send_json(json.loads(f.read_text(encoding="utf-8"))) if f.is_file() else self.send_json({}, 404)
+            return self.send_file(f) if f.is_file() else self.send_json({}, 404)
         if self.headers.get("apikey") != "anon-key":
             return self.send_json({"message": "no apikey"}, 401)
         if u.path == "/rest/v1/runs":
@@ -128,7 +163,8 @@ class McpTest(unittest.TestCase):
         self.assertIsNone(self.rpc("notifications/initialized", notify=True))
         tools = self.rpc("tools/list")["result"]["tools"]
         self.assertEqual({t["name"] for t in tools}, {"describe_model", "list_results", "get_kpi", "compare_results",
-                                                     "get_timeseries_summary", "request_run", "get_run_status", "worker_status"})
+                                                     "get_timeseries_summary", "request_run", "get_run_status", "worker_status",
+                                                     "get_point_depth"})
         self.assertIn("error", self.rpc("no/such"))
 
     def test_2_read_tools(self):
@@ -187,6 +223,32 @@ class McpTest(unittest.TestCase):
         err, w = self.tool("worker_status")
         self.assertFalse(err)
         self.assertFalse(w["계산_서버"][0]["켜짐"])
+
+    def test_5_point_depth(self):
+        lon, lat = SEARCH_HIT
+        err, p = self.tool("get_point_depth", {"lat": lat, "lon": lon, "result": "S0-C"})
+        self.assertFalse(err, p)
+        self.assertEqual(p["셀"]["번호"], CELL)
+        self.assertAlmostEqual(p["수심"]["최대_수심_m"], CELL_DEPTH)
+        self.assertGreaterEqual(p["수심"]["10분_최대_m"], 0.1)
+        self.assertEqual(list(p["수심"]["수심_1시간_간격_m"])[:2], ["02:00", "03:00"])
+        # 주소 → 사이트 /api/search → 같은 셀, 결과를 안 주면 게시된 결과 전부
+        err, pa = self.tool("get_point_depth", {"address": "시험 지점"})
+        self.assertFalse(err, pa)
+        self.assertEqual(pa["위치"]["찾은_곳"], "시험 지점")
+        self.assertEqual([r["결과"] for r in pa["수심"]], ["S0-E", "S0-C", "S2-mh150", "S2-mh050"])
+        self.assertAlmostEqual(next(r for r in pa["수심"] if r["결과"] == "S0-C")["최대_수심_m"], CELL_DEPTH)
+        # 웹 계산 결과 (Storage)
+        err, pr = self.tool("get_point_depth", {"lat": lat, "lon": lon, "result": "run-1"})
+        self.assertFalse(err, pr)
+        # 범위 밖, 검색 실패, 입력 없음
+        err, out = self.tool("get_point_depth", {"lat": 36.2, "lon": 129.0})
+        self.assertFalse(err)
+        self.assertIn("범위 밖", out["결과"])
+        err, msg = self.tool("get_point_depth", {"address": "없는 곳"})
+        self.assertTrue(err)
+        err, msg = self.tool("get_point_depth", {})
+        self.assertTrue(err)
 
 
 if __name__ == "__main__":

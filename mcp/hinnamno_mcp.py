@@ -2,6 +2,7 @@
 
 AI(Claude Desktop 등)가 자연어로 다음을 할 수 있게 한다.
   · 모형·입력 범위 보기, 계산된 결과 목록, KPI 조회, 두 결과 비교, 하천 단면·측방 구조물 시계열 요약
+  · 주소·경위도 한 곳의 수심(최대·시각·지속·1시간 간격 변화) — 지도에서 그 자리를 누른 것과 같은 셀 값 (2026-11-23)
   · 새 조건으로 HEC-RAS 계산 요청(웹 '조건 설정·실행'과 같은 대기열), 진행 상태·계산 서버 상태 확인
 
 원칙
@@ -32,6 +33,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from array import array
 from pathlib import Path
 
 SERVER_NAME = "hinnamno-flood"
@@ -81,6 +83,16 @@ def http(method: str, url: str, body=None, headers: dict | None = None):
     except urllib.error.URLError as e:
         raise ToolError(f"{url.split('?')[0]} 에 접속하지 못했습니다: {e.reason}")
     return json.loads(text) if text else None
+
+
+def http_bin(url: str) -> bytes:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=TIMEOUT) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        raise ToolError(f"GET {url.split('?')[0]} 응답 {e.code}")
+    except urllib.error.URLError as e:
+        raise ToolError(f"{url.split('?')[0]} 에 접속하지 못했습니다: {e.reason}")
 
 
 def site_json(path: str):
@@ -393,6 +405,147 @@ def t_get_timeseries_summary(a: dict) -> dict:
     }
 
 
+# ------------------------------------------------------------------ 한 지점 수심 (web/lib/cells.ts·data.ts cellResult·cellSeries와 같은 규칙)
+DEPTH_CLASSES = [(0.1, 0.5, "0.1–0.5 m (무릎 아래)"), (0.5, 1.0, "0.5–1.0 m (무릎~허리)"), (1.0, 2.0, "1.0–2.0 m (허리~키 높이)"),
+                 (2.0, math.inf, "2.0 m 이상 (키보다 깊음)")]  # web/lib/depth.ts DEPTH_CLASSES
+OSC_STEP_M, OSC_MIN_COUNT = 0.3, 5  # web/lib/data.ts 수치 진동 판정과 같음
+_MESH: dict | None = None
+
+
+def _typed(code: str, raw: bytes) -> array:
+    a = array(code)
+    a.frombytes(raw)
+    if sys.byteorder != "little":  # 웹 자료는 little-endian
+        a.byteswap()
+    return a
+
+
+def mesh_index() -> dict:
+    """2D 격자 다각형 + 균일 격자 색인 (처음 한 번만 내려받음)."""
+    global _MESH
+    if _MESH is None:
+        info = site_json(f"{VERSION}/mesh.json")
+        v = _typed("i", http_bin(f"{SITE}/data/{VERSION}/mesh_vertices.i32"))
+        o = _typed("I", http_bin(f"{SITE}/data/{VERSION}/mesh_offsets.u32"))
+        n = info["n_cells"]
+        if len(o) != n + 1:
+            raise ToolError("격자 자료 크기가 mesh.json과 다릅니다.")
+        sc = info["coordinate_scale"]
+        w, s_, e, nn = info["bbox_lonlat"]
+        nx, ny = 160, 320
+        bw, bh = (e - w) / nx, (nn - s_) / ny
+        bins: list[list[int]] = [[] for _ in range(nx * ny)]
+        for i in range(n):
+            xs = v[2 * o[i]:2 * o[i + 1]:2]
+            ys = v[2 * o[i] + 1:2 * o[i + 1]:2]
+            bx0, bx1 = (min(nx - 1, max(0, int((min(xs) / sc - w) // bw))), min(nx - 1, max(0, int((max(xs) / sc - w) // bw))))
+            by0, by1 = (min(ny - 1, max(0, int((min(ys) / sc - s_) // bh))), min(ny - 1, max(0, int((max(ys) / sc - s_) // bh))))
+            for by in range(by0, by1 + 1):
+                for bx in range(bx0, bx1 + 1):
+                    bins[by * nx + bx].append(i)
+        _MESH = {"info": info, "v": v, "o": o, "bins": bins, "nx": nx, "ny": ny, "bw": bw, "bh": bh}
+    return _MESH
+
+
+def find_cell(lon: float, lat: float) -> int:
+    m = mesh_index()
+    w, s_, e, n = m["info"]["bbox_lonlat"]
+    if not (w <= lon <= e and s_ <= lat <= n):
+        return -1
+    sc = m["info"]["coordinate_scale"]
+    x, y = lon * sc, lat * sc
+    bx = min(m["nx"] - 1, max(0, int((lon - w) // m["bw"])))
+    by = min(m["ny"] - 1, max(0, int((lat - s_) // m["bh"])))
+    v, o = m["v"], m["o"]
+    for i in m["bins"][by * m["nx"] + bx]:
+        a, b = o[i], o[i + 1]
+        inside = False
+        j = b - 1
+        for k in range(a, b):
+            xi, yi, xj, yj = v[2 * k], v[2 * k + 1], v[2 * j], v[2 * j + 1]
+            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                inside = not inside
+            j = k
+        if inside:
+            return i
+    return -1
+
+
+def geocode(q: str) -> dict:
+    """주소·건물명 → 경위도: 웹 주소 검색과 같은 사이트 /api/search (브이월드 검색)를 쓴다."""
+    bbox = ",".join(str(x) for x in mesh_index()["info"]["bbox_lonlat"])
+    j = http("GET", f"{SITE}/api/search?q={urllib.parse.quote(q)}&bbox={urllib.parse.quote(bbox)}")
+    items = (j or {}).get("items") or []
+    if not items:
+        raise ToolError(f"'{q}'를 찾지 못했습니다{(' (' + j['error'] + ')') if j and j.get('error') else ''}. 경위도(lat, lon)로도 물을 수 있습니다.")
+    return items[0]
+
+
+def _depth_class(d: float) -> str | None:
+    return next((name for lo, hi, name in DEPTH_CLASSES if lo <= d < hi), None)
+
+
+def point_result(res: dict, cell: int, n: int, series: bool) -> dict:
+    meta = fetch(res, "meta.json")
+    q = meta["quantization"]
+    step, nopeak = q["depth_step_m"], q["no_peak_frame"]
+    times, dt = meta["frames"]["times"], meta["frames"]["step_seconds"]
+    cm = http_bin(res["url"]("cells_max.u8"))
+    if len(cm) != 4 * n:
+        raise ToolError(f"{res['id']}: cells_max.u8 크기가 격자와 다릅니다 (모형 버전 확인).")
+    d = round(cm[cell] * step, 2)
+    peak = cm[2 * n + cell]
+    out = {"결과": res["id"], "이름": res["label"], "최대_수심_m": d, "등급": _depth_class(d) or "0.1 m 미만 (침수 아님)",
+           "최대_시각": None if peak == nopeak or peak >= len(times) else hhmm(times[peak]),
+           "0.3m_이상_지속_분": round(cm[3 * n + cell] * dt / 60)}
+    if series:
+        fr = http_bin(res["url"]("frames_depth.u8"))
+        nf = meta["frames"]["count"]
+        if len(fr) != nf * n:
+            raise ToolError(f"{res['id']}: frames_depth.u8 크기가 다릅니다.")
+        vals = [fr[t * n + cell] * step for t in range(nf)]
+        osc = sum(1 for t in range(2, nf) if (vals[t - 1] - vals[t - 2]) * (vals[t] - vals[t - 1]) < 0
+                  and abs(vals[t - 1] - vals[t - 2]) > OSC_STEP_M and abs(vals[t] - vals[t - 1]) > OSC_STEP_M)
+        first = next((t for t in range(nf) if vals[t] >= 0.1), None)
+        out["처음_0.1m_넘은_시각"] = hhmm(times[first]) if first is not None else None
+        out["수심_1시간_간격_m"] = {hhmm(times[t]): round(vals[t], 2) for t in range(0, nf, max(1, round(3600 / dt)))}
+        out["10분_최대_m"] = round(max(vals), 2)
+        if osc >= OSC_MIN_COUNT:
+            out["주의"] = f"10분 간격 수심이 {OSC_STEP_M} m 넘게 오르내리기를 {osc}번 반복 — 수치 진동 의심 구간 (모형 설명 참고)"
+    return out
+
+
+def t_get_point_depth(a: dict) -> dict:
+    lat, lon = a.get("lat"), a.get("lon")
+    place = None
+    if lat is None or lon is None:
+        q = str(a.get("address") or "").strip()
+        if not q:
+            raise ToolError("address(주소·건물명) 또는 lat·lon(위도·경도)을 주세요.")
+        hit = geocode(q)
+        lat, lon = float(hit["lat"]), float(hit["lon"])
+        place = {"검색어": q, "찾은_곳": hit.get("title"), "주소": hit.get("address")}
+    lat, lon = float(lat), float(lon)
+    m = mesh_index()
+    n = m["info"]["n_cells"]
+    cell = find_cell(lon, lat)
+    out = {"위치": {**(place or {}), "위도": round(lat, 6), "경도": round(lon, 6)}}
+    if cell < 0:
+        out["결과"] = "모의 2D 범위 밖입니다 (하천 1D 구간이거나 2D 격자 바깥) — 수심 값이 없습니다."
+        return out
+    area = next((ar["name"] for ar in m["info"].get("areas", []) if ar["offset"] <= cell < ar["offset"] + ar["count"]), None)
+    out["셀"] = {"번호": cell, "2D": {"left": "좌안", "right": "우안"}.get(area, area)}
+    if a.get("result"):
+        out["수심"] = point_result(resolve(a["result"]), cell, n, series=True)
+    else:
+        out["수심"] = [point_result(resolve(s["scenario_id"]), cell, n, series=False) for s in published()]
+    out["설명"] = ("셀 안 젖은 부분의 평균 수심(2 m 지형 기준, 0.05 m 단위) — 지도에서 그 자리를 눌렀을 때와 같은 값. "
+                 "지도 색(경사 수면 2 m 이미지)과는 조금 다를 수 있음. 좌안 2D는 체적오차가 커서 신뢰도가 낮음")
+    if area == "left":
+        out["주의"] = "좌안 2D — 측방 구조물 RS 7.65 하나로만 하천과 이어지고 체적오차가 약 10 %라 참고값으로만"
+    return out
+
+
 def _iso(t: str) -> float:
     from datetime import datetime
     return datetime.fromisoformat(t).timestamp()
@@ -484,6 +637,10 @@ TOOLS = [
     ("get_run_status", "웹 계산 하나의 상태·진행 단계·경과 시간, 끝났으면 침수면적과 화면 주소.",
      {"run": {"type": "string", "description": "계산 번호 (예 run-3 또는 3)"}}, ["run"], t_get_run_status),
     ("worker_status", "계산 서버(HEC-RAS 워커 PC)가 켜져 있는지와 대기 중인 계산.", {}, [], t_worker_status),
+    ("get_point_depth", "주소·건물명 또는 위도·경도 한 곳의 수심: 최대 수심·등급·최대 시각·0.3 m 이상 지속 시간. result를 주면 그 결과의 1시간 간격 수심 변화까지, 없으면 게시된 결과 전부의 최대 수심을 비교한다.",
+     {"address": {"type": "string", "description": "주소나 건물명 (예: 오천읍 문덕리, 청림동 행정복지센터). lat·lon이 있으면 무시"},
+      "lat": {"type": "number", "description": "위도 (WGS84)"}, "lon": {"type": "number", "description": "경도 (WGS84)"},
+      "result": {**RESULT, "description": "(선택) " + RESULT["description"]}}, [], t_get_point_depth),
 ]
 TOOL_MAP = {t[0]: t for t in TOOLS}
 
