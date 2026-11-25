@@ -781,19 +781,30 @@
       getJSON(fileUrl(item, "river_flow.json"), { cache: "no-cache" }).catch(function () {
         return null;
       }),
-      getJSON(fileUrl(item, "depth2m/frames.json"), { cache: "no-cache" }).catch(function () {
-        return null;
-      }),
-      getJSON(fileUrl(item, "frames2m/frames.json"), { cache: "no-cache" }).catch(function () {
-        return null;
-      }),
+      // 연속 수심(depth2m)이 있으면 예전 2 m 등급 판(frames2m)은 찾지 않는다 — 없는 파일 요청이 콘솔 404로 남지 않게 (2026-11-25)
+      getJSON(fileUrl(item, "depth2m/frames.json"), { cache: "no-cache" })
+        .catch(function () {
+          return null;
+        })
+        .then(function (d) {
+          if (d && d.encoding) return [d, null];
+          return getJSON(fileUrl(item, "frames2m/frames.json"), { cache: "no-cache" })
+            .catch(function () {
+              return null;
+            })
+            .then(function (f2) {
+              return [d, f2];
+            });
+        }),
     ]).then(function (r) {
       if (S.cur !== item) return;
       S.tiles = r[0];
       S.frames = r[1];
       S.kpi = r[2];
-      S.depth = r[4] && r[4].count === (r[1] && r[1].count) && r[4].encoding ? r[4] : null; // 연속 수심 2 m (3D 물 표면용)
-      S.frames2 = !S.depth && r[5] && r[5].count === (r[1] && r[1].count) ? r[5] : null; // 예전 2 m 등급 판 (연속 수심이 없을 때만)
+      var d2 = r[4][0],
+        f2 = r[4][1];
+      S.depth = d2 && d2.count === (r[1] && r[1].count) && d2.encoding ? d2 : null; // 연속 수심 2 m (3D 물 표면용)
+      S.frames2 = !S.depth && f2 && f2.count === (r[1] && r[1].count) ? f2 : null; // 예전 2 m 등급 판 (연속 수심이 없을 때만)
       setFlowData(r[3]);
       if (!S.frames && S.mode === "time") S.mode = "max";
       if (S.frames) S.frame = Math.min(S.frame, S.frames.count - 1);
